@@ -2,9 +2,14 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 class ChunkMetadata(BaseModel):
+    chunk_id: str
     source_file: str
-    headers: List[str] = Field(default_factory=list)
-    frontmatter: Dict[str, Any] = Field(default_factory=dict)
+    heading_hierarchy: List[str] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
+    entities: List[str] = Field(default_factory=list)
+    timestamps: Dict[str, Any] = Field(default_factory=dict)
+    backlinks: List[str] = Field(default_factory=list)
+    semantic_category: Optional[str] = None
 
 class Chunk(BaseModel):
     content: str
