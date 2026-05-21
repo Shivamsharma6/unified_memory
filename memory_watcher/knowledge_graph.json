@@ -1,0 +1,124 @@
+{
+  "directed": true,
+  "multigraph": false,
+  "graph": {},
+  "nodes": [
+    {
+      "type": "document",
+      "label": "architecture.md",
+      "id": "DOC:architecture.md"
+    },
+    {
+      "type": "person",
+      "label": "Unified Memory",
+      "id": "Unified Memory"
+    },
+    {
+      "type": "concept",
+      "label": "Qdrant",
+      "id": "Qdrant"
+    },
+    {
+      "type": "concept",
+      "label": "FastAPI",
+      "id": "FastAPI"
+    },
+    {
+      "type": "concept",
+      "label": "Shivam",
+      "id": "Shivam"
+    },
+    {
+      "type": "concept",
+      "label": "RetrievalPipeline",
+      "id": "RetrievalPipeline"
+    },
+    {
+      "type": "document",
+      "label": "issues.md",
+      "id": "DOC:issues.md"
+    },
+    {
+      "type": "issue",
+      "label": "ConnectionError",
+      "id": "ConnectionError"
+    },
+    {
+      "type": "concept",
+      "label": "DockerTimeout",
+      "id": "DockerTimeout"
+    },
+    {
+      "type": "concept",
+      "label": "OpenClaw",
+      "id": "OpenClaw"
+    }
+  ],
+  "links": [
+    {
+      "relation": "references",
+      "source": "DOC:architecture.md",
+      "target": "Unified Memory"
+    },
+    {
+      "relation": "references",
+      "source": "DOC:architecture.md",
+      "target": "Qdrant"
+    },
+    {
+      "relation": "depends_on",
+      "source": "DOC:architecture.md",
+      "target": "FastAPI"
+    },
+    {
+      "relation": "references",
+      "source": "DOC:architecture.md",
+      "target": "Shivam"
+    },
+    {
+      "relation": "references",
+      "source": "DOC:architecture.md",
+      "target": "RetrievalPipeline"
+    },
+    {
+      "relation": "uses",
+      "source": "Unified Memory",
+      "target": "Qdrant"
+    },
+    {
+      "relation": "improves",
+      "source": "Shivam",
+      "target": "RetrievalPipeline"
+    },
+    {
+      "relation": "fixes",
+      "source": "DOC:issues.md",
+      "target": "ConnectionError"
+    },
+    {
+      "relation": "references",
+      "source": "DOC:issues.md",
+      "target": "DockerTimeout"
+    },
+    {
+      "relation": "references",
+      "source": "DOC:issues.md",
+      "target": "OpenClaw"
+    },
+    {
+      "relation": "references",
+      "source": "DOC:issues.md",
+      "target": "Unified Memory"
+    },
+    {
+      "relation": "caused_by",
+      "source": "ConnectionError",
+      "target": "DockerTimeout"
+    },
+    {
+      "relation": "uses",
+      "source": "OpenClaw",
+      "target": "Unified Memory"
+    }
+  ]
+}

@@ -8,3 +8,6 @@ ollama==0.2.1
 aiosqlite==0.20.0
 fastapi==0.111.0
 uvicorn[standard]==0.29.0
+networkx==3.3
+neo4j==5.20.0
+pyvis==0.3.2
