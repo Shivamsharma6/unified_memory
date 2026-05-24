@@ -135,10 +135,12 @@ async def store_fix_summary(
     file_list = "\n".join(f"- `{path}`" for path in files or [])
     today = date.today().isoformat()
 
+    import json
+    tags_json = json.dumps(all_tags)
     text = f"""---
 type: procedural
 date: {today}
-tags: {all_tags}
+tags: {tags_json}
 ---
 # Fix Summary: {issue}
 
