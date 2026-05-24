@@ -1,7 +1,10 @@
 from api.routers.graph import router as graph_router
 from fastapi import FastAPI, HTTPException
 from api.models import SearchRequest, SearchResponse, RememberRequest, SummarizeRequest, ContextRequest, ProcedureRequest
+from api.memory_writer import write_memory
+from api.procedure_reader import get_relevant_procedures
 from api.retrieval.pipeline import RetrievalPipeline
+from pipelines.ingestion import IngestionPipeline
 
 app = FastAPI(
     title="Unified Agent Memory API",
@@ -11,6 +14,7 @@ app = FastAPI(
 app.include_router(graph_router)
 
 pipeline = RetrievalPipeline()
+ingestion_pipeline = IngestionPipeline()
 
 @app.on_event("startup")
 async def startup_event():
@@ -27,8 +31,24 @@ async def search_memory(request: SearchRequest):
 @app.post("/remember", tags=["Ingestion"])
 async def remember(request: RememberRequest):
     """Directly ingest a memory bypassing the file watcher (for agent direct writes)."""
-    # Stub: Would write to file and trigger ingestion
-    return {"status": "success", "message": "Memory ingested and queued for embedding."}
+    try:
+        path = write_memory(request)
+        try:
+            await ingestion_pipeline.process_file(str(path))
+            indexed = True
+            warning = None
+        except Exception as ingest_error:
+            indexed = False
+            warning = str(ingest_error)
+        return {
+            "status": "success",
+            "path": str(path),
+            "indexed": indexed,
+            "warning": warning,
+            "message": "Memory written to the vault.",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/summarize", tags=["Compute"])
 async def summarize(request: SummarizeRequest):
@@ -56,7 +76,7 @@ async def get_context(request: ContextRequest):
 @app.post("/procedures", tags=["Retrieval"])
 async def get_procedures(request: ProcedureRequest):
     """Specialized endpoint for retrieving operational rules (AGENTS.md)."""
-    return {"task": request.task, "procedures": ["1. Check YAML frontmatter", "2. Use wikilinks"]}
+    return {"task": request.task, "procedures": get_relevant_procedures(request.task)}
 
 @app.get("/health", tags=["System"])
 async def health_check():

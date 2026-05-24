@@ -9,7 +9,7 @@ API_PID_FILE="$PID_DIR/api.pid"
 WATCHER_PID_FILE="$PID_DIR/watcher.pid"
 
 usage() {
-  echo "Usage: ./uams {install|start|stop|restart|status|index|logs|mcp}"
+  echo "Usage: ./uams {install|start|stop|restart|status|index|logs|mcp|mcp-config|doctor}"
 }
 
 require_venv() {
@@ -100,6 +100,14 @@ case "${1:-}" in
     require_venv
     export UAMS_API_URL="${UAMS_API_URL:-http://localhost:${UAMS_API_PORT:-8000}}"
     exec "$VENV_DIR/bin/python" -m uams_sdk.mcp_server
+    ;;
+  mcp-config)
+    require_venv
+    "$VENV_DIR/bin/python" "$WATCHER_DIR/scripts/mcp_config.py" "${2:-all}"
+    ;;
+  doctor)
+    require_venv
+    "$VENV_DIR/bin/python" "$WATCHER_DIR/scripts/doctor.py"
     ;;
   *)
     usage

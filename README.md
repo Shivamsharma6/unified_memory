@@ -81,6 +81,18 @@ Run the MCP adapter for MCP-aware agents:
 ./uams mcp
 ```
 
+Print ready-to-paste MCP registration snippets:
+
+```bash
+./uams mcp-config all
+```
+
+Check the local install:
+
+```bash
+./uams doctor
+```
+
 ## Agent Integration
 
 ### MCP Adapter
@@ -99,6 +111,18 @@ The recommended default integration is MCP. Configure the agent to launch UAMS o
     }
   }
 }
+```
+
+Generate this snippet with:
+
+```bash
+./uams mcp-config json
+```
+
+For Codex, generate TOML for `~/.codex/config.toml`:
+
+```bash
+./uams mcp-config codex
 ```
 
 Once connected, agents discover these tools automatically:
@@ -130,6 +154,12 @@ Start the API/watch service first:
 ```bash
 ./uams start
 ```
+
+MCP registration is **per agent/client**. There is no universal machine-wide registry that every agent reads. Production setups should either:
+
+- commit a project-level MCP config where the client supports it,
+- add the generated snippet to the user-level agent config,
+- or wrap the agent launcher so it starts with the UAMS MCP server enabled.
 
 Python agents can use the SDK directly:
 
@@ -204,11 +234,15 @@ The full write protocol lives in [AGENTS.md](AGENTS.md).
 ## Open Source Roadmap
 
 - Package the API and watcher as installable Python console commands.
-- Add templates for Claude Code, Codex, OpenClaw, Hermes, and LangChain-style agents.
+- Add more templates for Claude Code, Codex, OpenClaw, Hermes, and LangChain-style agents.
 - Replace heuristic post-task distillation with configurable local or hosted LLM distillers.
 - Add first-class repository scanners for code symbols, commits, PRs, and issue history.
 - Add memory quality checks for missing frontmatter, orphan notes, and oversized chunks.
 - Publish Docker Compose profiles for local-only, team, and production setups.
+
+## Public Release
+
+Before publishing, run through [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) and review [SECURITY.md](SECURITY.md). The default deployment is local-first and does not include public API authentication.
 
 ## Development
 

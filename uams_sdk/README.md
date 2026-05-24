@@ -63,6 +63,14 @@ Agent MCP config:
 }
 ```
 
+Generate snippets from the repository root:
+
+```bash
+./uams mcp-config all
+./uams mcp-config codex
+./uams mcp-config json
+```
+
 Discovered MCP capabilities:
 
 - Tools: `health`, `search_memory`, `get_context`, `get_procedures`, `remember`, `get_related_entities`, `summarize_memory`, `store_fix_summary`
