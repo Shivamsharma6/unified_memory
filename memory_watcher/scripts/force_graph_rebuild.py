@@ -1,8 +1,12 @@
 import asyncio
 import glob
 from pathlib import Path
+import sys
 import yaml
 import networkx as nx
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+
 from graph.extractor import GraphExtractor
 from graph.store import KnowledgeGraphStore
 
@@ -46,7 +50,7 @@ async def rebuild_graph():
     store.export_json(str(vault_path / "memory_watcher" / "knowledge_graph.json"))
     print("Graph rebuilt and saved.")
     
-    G = store.graph
+    G = store.G
     
     print("\n=== UPDATED KNOWLEDGE GRAPH SUMMARY ===")
     print(f"Total Nodes: {G.number_of_nodes()}")

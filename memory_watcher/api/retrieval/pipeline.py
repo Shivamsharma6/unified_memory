@@ -94,9 +94,14 @@ class RetrievalPipeline:
         ranked = []
         for r in results:
             # Handle both actual Qdrant objects and mocked dicts (for tests)
-            score = r.score if hasattr(r, 'score') else r.get('score', 0.5)
-            payload = r.payload if hasattr(r, 'payload') else r.get('payload', {})
-            r_id = getattr(r, 'id', r.get('id', 'mock_id'))
+            if isinstance(r, dict):
+                score = r.get('score', 0.5)
+                payload = r.get('payload', {})
+                r_id = r.get('id', 'mock_id')
+            else:
+                score = getattr(r, 'score', 0.5)
+                payload = getattr(r, 'payload', {}) or {}
+                r_id = getattr(r, 'id', 'mock_id')
             
             base_importance = 1.0 
             result_entities = payload.get("entities", [])

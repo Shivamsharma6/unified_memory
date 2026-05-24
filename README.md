@@ -102,6 +102,12 @@ Print ready-to-paste MCP registration snippets:
 ./uams mcp-config all
 ```
 
+Automatically integrate UAMS MCP server with all installed local agents (Claude Desktop, Claude Code, Cursor, Windsurf):
+
+```bash
+./uams integrate
+```
+
 Check the local install:
 
 ```bash

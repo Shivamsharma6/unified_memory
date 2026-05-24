@@ -9,7 +9,7 @@ API_PID_FILE="$PID_DIR/api.pid"
 WATCHER_PID_FILE="$PID_DIR/watcher.pid"
 
 usage() {
-  echo "Usage: ./uams {install|start|stop|restart|status|index|logs|mcp|mcp-config|doctor}"
+  echo "Usage: ./uams {install|start|stop|restart|status|index|logs|mcp|mcp-config|doctor|integrate}"
 }
 
 compose_cmd() {
@@ -122,6 +122,10 @@ case "${1:-}" in
   doctor)
     require_venv
     "$VENV_DIR/bin/python" "$WATCHER_DIR/scripts/doctor.py"
+    ;;
+  integrate)
+    require_venv
+    "$VENV_DIR/bin/python" "$WATCHER_DIR/scripts/auto_integrate.py"
     ;;
   *)
     usage
