@@ -1,5 +1,8 @@
 from typing import Dict, Any, List
-from .client import UAMSClient
+try:
+    from .client import UAMSClient
+except ImportError:
+    from client import UAMSClient
 
 # These functions are designed to be exposed as tools/MCP for OpenClaw/Hermes
 

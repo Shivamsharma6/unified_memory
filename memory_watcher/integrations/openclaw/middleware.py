@@ -1,6 +1,9 @@
 import logging
 from typing import Dict, Any, Tuple
-from .client import UAMSClient
+try:
+    from .client import UAMSClient
+except ImportError:
+    from client import UAMSClient
 
 logger = logging.getLogger(__name__)
 

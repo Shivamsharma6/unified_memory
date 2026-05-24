@@ -99,8 +99,12 @@ case "${1:-}" in
   status)
     if is_running "$API_PID_FILE"; then echo "API: running on PID $(cat "$API_PID_FILE")"; else echo "API: stopped"; fi
     if is_running "$WATCHER_PID_FILE"; then echo "Watcher: running on PID $(cat "$WATCHER_PID_FILE")"; else echo "Watcher: stopped"; fi
-    compose="$(compose_cmd)"
-    (cd "$WATCHER_DIR" && $compose ps qdrant)
+    if ! docker info >/dev/null 2>&1; then
+      echo "Qdrant: unknown (Docker is not running)"
+    else
+      compose="$(compose_cmd)"
+      (cd "$WATCHER_DIR" && $compose ps qdrant)
+    fi
     ;;
   index)
     require_venv
