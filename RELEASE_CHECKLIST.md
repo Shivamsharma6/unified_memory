@@ -2,8 +2,8 @@
 
 ## Must Have
 
-- [ ] Pick a repository name and update clone URLs in `README.md`.
-- [ ] Confirm `LICENSE` matches the intended open-source license.
+- [x] Pick a repository name and update clone URLs in `README.md`.
+- [x] Confirm `LICENSE` matches the intended open-source license.
 - [ ] Run `./install.sh` on a clean machine or clean virtual environment.
 - [ ] Run `./uams start`, open `http://localhost:8000/docs`, and verify `/health`.
 - [ ] Run `./uams index` against the sample vault.
@@ -18,8 +18,8 @@
 
 - [ ] Add screenshots or terminal recordings for setup and MCP discovery.
 - [ ] Publish a `v0.1.0` GitHub release with known limitations.
-- [ ] Add CI for linting, tests, and package installation.
-- [ ] Add issue templates for bugs, feature requests, and adapter requests.
+- [x] Add CI for linting, tests, and package installation.
+- [x] Add issue templates for bugs, feature requests, and adapter requests.
 - [ ] Add more agent-specific examples for Codex, Claude Code, Cursor, OpenClaw, and Hermes.
 
 ## Known Limitations To Document

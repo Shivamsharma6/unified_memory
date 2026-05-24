@@ -45,7 +45,7 @@ Requirements:
 Install:
 
 ```bash
-git clone <your-repo-url> unified_memory
+git clone https://github.com/Shivamsharma6/unified_memory.git
 cd unified_memory
 ./install.sh
 ```
@@ -74,6 +74,21 @@ Check status or stop services:
 ./uams status
 ./uams stop
 ```
+
+Docker and Qdrant are automated by `./uams start`. UAMS uses Docker Compose to run Qdrant locally, with ports bound to `127.0.0.1` by default:
+
+```text
+Qdrant HTTP: http://127.0.0.1:6333
+Qdrant gRPC: 127.0.0.1:6334
+```
+
+Optional overrides live in `.env`:
+
+```bash
+cp .env.example .env
+```
+
+The default image follows Qdrant’s documented Docker setup, which uses `qdrant/qdrant:latest`. For stricter production pinning, set `QDRANT_IMAGE=qdrant/qdrant:<version>` in `.env`.
 
 Run the MCP adapter for MCP-aware agents:
 
@@ -243,6 +258,10 @@ The full write protocol lives in [AGENTS.md](AGENTS.md).
 ## Public Release
 
 Before publishing, run through [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) and review [SECURITY.md](SECURITY.md). The default deployment is local-first and does not include public API authentication.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). UAMS is released under the [MIT License](LICENSE).
 
 ## Development
 

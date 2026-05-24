@@ -12,6 +12,17 @@ usage() {
   echo "Usage: ./uams {install|start|stop|restart|status|index|logs|mcp|mcp-config|doctor}"
 }
 
+compose_cmd() {
+  if docker compose version >/dev/null 2>&1; then
+    echo "docker compose"
+  elif command -v docker-compose >/dev/null 2>&1; then
+    echo "docker-compose"
+  else
+    echo "Docker Compose is required. Install Docker Desktop, OrbStack, or docker-compose." >&2
+    exit 1
+  fi
+}
+
 require_venv() {
   if [ ! -x "$VENV_DIR/bin/python" ]; then
     echo "UAMS is not installed yet. Run ./install.sh first."
@@ -29,7 +40,9 @@ start_qdrant() {
     echo "Docker is not running. Start Docker Desktop or OrbStack first."
     exit 1
   fi
-  (cd "$WATCHER_DIR" && docker compose up -d qdrant)
+  local compose
+  compose="$(compose_cmd)"
+  (cd "$WATCHER_DIR" && $compose up -d qdrant)
 }
 
 start_api() {
@@ -86,7 +99,8 @@ case "${1:-}" in
   status)
     if is_running "$API_PID_FILE"; then echo "API: running on PID $(cat "$API_PID_FILE")"; else echo "API: stopped"; fi
     if is_running "$WATCHER_PID_FILE"; then echo "Watcher: running on PID $(cat "$WATCHER_PID_FILE")"; else echo "Watcher: stopped"; fi
-    (cd "$WATCHER_DIR" && docker compose ps qdrant)
+    compose="$(compose_cmd)"
+    (cd "$WATCHER_DIR" && $compose ps qdrant)
     ;;
   index)
     require_venv

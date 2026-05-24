@@ -2,7 +2,7 @@
 
 ## Supported Use
 
-UAMS is designed as a local-first memory system. The default deployment binds the API to the local machine or trusted developer network and stores memories as Markdown files in the vault.
+UAMS is designed as a local-first memory system. The default deployment binds Qdrant to localhost and stores memories as Markdown files in the vault. Keep the FastAPI service on localhost unless you add authentication and network controls.
 
 ## Security Expectations
 
