@@ -47,3 +47,18 @@ MANIFEST
 .obsidian/workspace
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
+
+# Memory Vault Folders (User Data)
+Concepts/
+Conversations/
+Daily/
+Logs/
+People/
+Procedures/
+Projects/
+Research/
+Tasks/
+
+# Generated Knowledge Graph Data
+knowledge_graph.json
+knowledge_graph*.html

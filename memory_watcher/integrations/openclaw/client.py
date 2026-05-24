@@ -37,14 +37,7 @@ class UAMSClient:
         return await self._post("/summarize", {"topic": topic})
 
     async def get_procedures(self, task: str) -> Dict[str, Any]:
-        # Using GET with query param based on typical REST, but matching our POST spec
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            try:
-                res = await client.post(f"{self.base_url}/procedures?task={task}")
-                res.raise_for_status()
-                return res.json()
-            except Exception as e:
-                return {"error": str(e)}
+        return await self._post("/procedures", {"task": task})
                 
     async def get_entities(self) -> Dict[str, Any]:
         return await self._post("/entities")

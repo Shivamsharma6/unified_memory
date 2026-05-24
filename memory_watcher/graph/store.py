@@ -41,7 +41,13 @@ class KnowledgeGraphStore:
     def get_semantic_neighborhood(self, entity: str, radius: int = 2) -> Dict[str, Any]:
         """Graph Traversal: Fetch n-hop neighborhood for an entity."""
         if entity not in self.G:
-            return {"error": "Entity not found"}
+            # Fallback to case-insensitive match
+            lower_entity = entity.lower()
+            matched_node = next((n for n in self.G.nodes if str(n).lower() == lower_entity), None)
+            if matched_node:
+                entity = matched_node
+            else:
+                return {"error": "Entity not found"}
             
         subgraph = nx.ego_graph(self.G, entity, radius=radius)
         return nx.node_link_data(subgraph)

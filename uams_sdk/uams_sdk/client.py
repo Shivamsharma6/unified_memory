@@ -83,4 +83,9 @@ class UAMSClient:
 
     async def related_entities(self, entity: str, radius: int = 1) -> Dict[str, Any]:
         """Graph retrieval: neighborhood expansion."""
-        return await self._request("GET", f"/graph/neighborhood/{entity}", {"radius": radius}, use_cache=True)
+        try:
+            return await self._request("GET", f"/graph/neighborhood/{entity}", {"radius": radius}, use_cache=True)
+        except UAMSAPIError as e:
+            if getattr(e, 'status_code', None) == 404:
+                return {"error": f"Entity '{entity}' not found in knowledge graph.", "nodes": [], "links": []}
+            raise
