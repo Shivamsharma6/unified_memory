@@ -2,7 +2,7 @@ import httpx
 import logging
 from typing import Dict, Any, List, Optional
 from .cache import SDKCache
-from .exceptions import UAMSConnectionError, UAMSAPIError
+from .exceptions import UAMSError, UAMSConnectionError, UAMSAPIError
 
 logger = logging.getLogger(__name__)
 

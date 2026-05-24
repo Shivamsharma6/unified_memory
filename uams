@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WATCHER_DIR="$ROOT_DIR/memory_watcher"
+VENV_DIR="$WATCHER_DIR/.venv"
+PID_DIR="$WATCHER_DIR/.pids"
+API_PID_FILE="$PID_DIR/api.pid"
+WATCHER_PID_FILE="$PID_DIR/watcher.pid"
+
+usage() {
+  echo "Usage: ./uams {install|start|stop|restart|status|index|logs}"
+}
+
+require_venv() {
+  if [ ! -x "$VENV_DIR/bin/python" ]; then
+    echo "UAMS is not installed yet. Run ./install.sh first."
+    exit 1
+  fi
+}
+
+is_running() {
+  local pid_file="$1"
+  [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file")" >/dev/null 2>&1
+}
+
+start_qdrant() {
+  if ! docker info >/dev/null 2>&1; then
+    echo "Docker is not running. Start Docker Desktop or OrbStack first."
+    exit 1
+  fi
+  (cd "$WATCHER_DIR" && docker compose up -d qdrant)
+}
+
+start_api() {
+  if is_running "$API_PID_FILE"; then
+    echo "API already running on PID $(cat "$API_PID_FILE")."
+    return
+  fi
+  mkdir -p "$PID_DIR"
+  (cd "$WATCHER_DIR" && nohup "$VENV_DIR/bin/uvicorn" api.main:app --host 0.0.0.0 --port "${UAMS_API_PORT:-8000}" > api.log 2>&1 & echo $! > "$API_PID_FILE")
+  echo "API started on PID $(cat "$API_PID_FILE")."
+}
+
+start_watcher() {
+  if is_running "$WATCHER_PID_FILE"; then
+    echo "Watcher already running on PID $(cat "$WATCHER_PID_FILE")."
+    return
+  fi
+  mkdir -p "$PID_DIR"
+  (cd "$WATCHER_DIR" && nohup "$VENV_DIR/bin/python" main.py > watcher.log 2>&1 & echo $! > "$WATCHER_PID_FILE")
+  echo "Watcher started on PID $(cat "$WATCHER_PID_FILE")."
+}
+
+stop_one() {
+  local name="$1"
+  local pid_file="$2"
+  if is_running "$pid_file"; then
+    kill "$(cat "$pid_file")"
+    echo "$name stopped."
+  else
+    echo "$name is not running."
+  fi
+  rm -f "$pid_file"
+}
+
+case "${1:-}" in
+  install)
+    exec "$ROOT_DIR/install.sh"
+    ;;
+  start)
+    require_venv
+    start_qdrant
+    start_api
+    start_watcher
+    echo "UAMS is online: http://localhost:${UAMS_API_PORT:-8000}/docs"
+    ;;
+  stop)
+    stop_one "Watcher" "$WATCHER_PID_FILE"
+    stop_one "API" "$API_PID_FILE"
+    ;;
+  restart)
+    "$0" stop
+    "$0" start
+    ;;
+  status)
+    if is_running "$API_PID_FILE"; then echo "API: running on PID $(cat "$API_PID_FILE")"; else echo "API: stopped"; fi
+    if is_running "$WATCHER_PID_FILE"; then echo "Watcher: running on PID $(cat "$WATCHER_PID_FILE")"; else echo "Watcher: stopped"; fi
+    (cd "$WATCHER_DIR" && docker compose ps qdrant)
+    ;;
+  index)
+    require_venv
+    start_qdrant
+    (cd "$WATCHER_DIR" && "$VENV_DIR/bin/python" scripts/reindex_vault.py)
+    ;;
+  logs)
+    tail -n 80 "$WATCHER_DIR/api.log" "$WATCHER_DIR/watcher.log" 2>/dev/null || true
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac

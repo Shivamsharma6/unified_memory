@@ -1,17 +1,14 @@
 from api.routers.graph import router as graph_router
-from fastapi import FastAPI, HTTPException, Depends
-from typing import List, Dict, Any
-from api.models import SearchRequest, SearchResponse, RememberRequest, SummarizeRequest, ContextRequest
+from fastapi import FastAPI, HTTPException
+from api.models import SearchRequest, SearchResponse, RememberRequest, SummarizeRequest, ContextRequest, ProcedureRequest
 from api.retrieval.pipeline import RetrievalPipeline
-from pydantic import BaseModel
 
 app = FastAPI(
-app.include_router(graph_router)
-
     title="Unified Agent Memory API",
     description="Advanced Retrieval API for Hermes, OpenClaw, and VoiceAI",
     version="1.0.0"
 )
+app.include_router(graph_router)
 
 pipeline = RetrievalPipeline()
 
@@ -57,9 +54,9 @@ async def get_context(request: ContextRequest):
     return {"task": request.task, "context": context_str, "tokens": res.context_tokens_used}
 
 @app.post("/procedures", tags=["Retrieval"])
-async def get_procedures(task: str):
+async def get_procedures(request: ProcedureRequest):
     """Specialized endpoint for retrieving operational rules (AGENTS.md)."""
-    return {"task": task, "procedures": ["1. Check YAML frontmatter", "2. Use wikilinks"]}
+    return {"task": request.task, "procedures": ["1. Check YAML frontmatter", "2. Use wikilinks"]}
 
 @app.get("/health", tags=["System"])
 async def health_check():

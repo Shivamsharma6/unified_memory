@@ -36,3 +36,6 @@ class SummarizeRequest(BaseModel):
 class ContextRequest(BaseModel):
     task: str
     max_tokens: int = 2000
+
+class ProcedureRequest(BaseModel):
+    task: str

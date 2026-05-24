@@ -5,13 +5,28 @@
   "nodes": [
     {
       "type": "document",
-      "label": "architecture.md",
-      "id": "DOC:architecture.md"
+      "label": "/Users/shivamsharma/projects/unified_memory/README.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/README.md"
+    },
+    {
+      "type": "concept",
+      "label": "Entity",
+      "id": "Entity"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/AGENTS.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/AGENTS.md"
     },
     {
       "type": "person",
-      "label": "Unified Memory",
-      "id": "Unified Memory"
+      "label": "Shivam Sharma",
+      "id": "Shivam Sharma"
+    },
+    {
+      "type": "person",
+      "label": "Unified Agent Memory",
+      "id": "Unified Agent Memory"
     },
     {
       "type": "concept",
@@ -19,106 +34,261 @@
       "id": "Qdrant"
     },
     {
-      "type": "concept",
-      "label": "FastAPI",
-      "id": "FastAPI"
+      "type": "person",
+      "label": "Knowledge Graph",
+      "id": "Knowledge Graph"
     },
     {
       "type": "concept",
-      "label": "Shivam",
-      "id": "Shivam"
-    },
-    {
-      "type": "concept",
-      "label": "RetrievalPipeline",
-      "id": "RetrievalPipeline"
-    },
-    {
-      "type": "document",
-      "label": "issues.md",
-      "id": "DOC:issues.md"
-    },
-    {
-      "type": "issue",
-      "label": "ConnectionError",
-      "id": "ConnectionError"
-    },
-    {
-      "type": "concept",
-      "label": "DockerTimeout",
-      "id": "DockerTimeout"
+      "label": "Hermes",
+      "id": "Hermes"
     },
     {
       "type": "concept",
       "label": "OpenClaw",
       "id": "OpenClaw"
+    },
+    {
+      "type": "concept",
+      "label": "VoiceAI",
+      "id": "VoiceAI"
+    },
+    {
+      "type": "person",
+      "label": "Entity Name",
+      "id": "Entity Name"
+    },
+    {
+      "type": "person",
+      "label": "Project X",
+      "id": "Project X"
+    },
+    {
+      "type": "concept",
+      "label": "WorksFor::OpenClaw",
+      "id": "WorksFor::OpenClaw"
+    },
+    {
+      "type": "person",
+      "label": "Concept A",
+      "id": "Concept A"
+    },
+    {
+      "type": "concept",
+      "label": "wikilinks",
+      "id": "wikilinks"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Research/README.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Research/README.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Tasks/PROC_Apple_Silicon_Optimization.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Tasks/PROC_Apple_Silicon_Optimization.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Tasks/PROC_Context_Optimization.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Tasks/PROC_Context_Optimization.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Tasks/README.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Tasks/README.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Tasks/PROC_Sentri_State_Management.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Tasks/PROC_Sentri_State_Management.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Tasks/PROC_AI_Coding_Directives.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Tasks/PROC_AI_Coding_Directives.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Tasks/PROC_Failure_Intelligence_Library.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Tasks/PROC_Failure_Intelligence_Library.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Tasks/PROC_Edit_Failure_Debugging.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Tasks/PROC_Edit_Failure_Debugging.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Tasks/PROC_Model_Configuration.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Tasks/PROC_Model_Configuration.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Tasks/PROC_TradePilot_Risk_Management.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Tasks/PROC_TradePilot_Risk_Management.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Tasks/PROC_Firmware_Debugging.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Tasks/PROC_Firmware_Debugging.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Projects/README.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Projects/README.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/uams_sdk/README.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/uams_sdk/README.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Daily/README.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Daily/README.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Logs/README.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Logs/README.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Conversations/README.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Conversations/README.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/AI/README.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/AI/README.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/AI/Embeddings/README.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/AI/Embeddings/README.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/AI/RetrievalCache/README.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/AI/RetrievalCache/README.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/AI/KnowledgeGraph/README.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/AI/KnowledgeGraph/README.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/AI/Summaries/README.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/AI/Summaries/README.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/AI/AgentMemories/README.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/AI/AgentMemories/README.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/memory_watcher/integrations/openclaw/prompts.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/memory_watcher/integrations/openclaw/prompts.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/People/README.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/People/README.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Concepts/Unified_Cognitive_System_Architecture.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Concepts/Unified_Cognitive_System_Architecture.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Concepts/Firmware_Architecture.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Concepts/Firmware_Architecture.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Concepts/Sentri_Architecture.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Concepts/Sentri_Architecture.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Concepts/README.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Concepts/README.md"
+    },
+    {
+      "type": "document",
+      "label": "/Users/shivamsharma/projects/unified_memory/Assets/README.md",
+      "id": "DOC:/Users/shivamsharma/projects/unified_memory/Assets/README.md"
     }
   ],
   "links": [
     {
       "relation": "references",
-      "source": "DOC:architecture.md",
-      "target": "Unified Memory"
+      "source": "DOC:/Users/shivamsharma/projects/unified_memory/README.md",
+      "target": "Entity"
     },
     {
       "relation": "references",
-      "source": "DOC:architecture.md",
+      "source": "DOC:/Users/shivamsharma/projects/unified_memory/AGENTS.md",
+      "target": "Shivam Sharma"
+    },
+    {
+      "relation": "references",
+      "source": "DOC:/Users/shivamsharma/projects/unified_memory/AGENTS.md",
+      "target": "Unified Agent Memory"
+    },
+    {
+      "relation": "references",
+      "source": "DOC:/Users/shivamsharma/projects/unified_memory/AGENTS.md",
       "target": "Qdrant"
     },
     {
-      "relation": "depends_on",
-      "source": "DOC:architecture.md",
-      "target": "FastAPI"
+      "relation": "references",
+      "source": "DOC:/Users/shivamsharma/projects/unified_memory/AGENTS.md",
+      "target": "Knowledge Graph"
     },
     {
       "relation": "references",
-      "source": "DOC:architecture.md",
-      "target": "Shivam"
+      "source": "DOC:/Users/shivamsharma/projects/unified_memory/AGENTS.md",
+      "target": "Hermes"
     },
     {
       "relation": "references",
-      "source": "DOC:architecture.md",
-      "target": "RetrievalPipeline"
-    },
-    {
-      "relation": "uses",
-      "source": "Unified Memory",
-      "target": "Qdrant"
-    },
-    {
-      "relation": "improves",
-      "source": "Shivam",
-      "target": "RetrievalPipeline"
-    },
-    {
-      "relation": "fixes",
-      "source": "DOC:issues.md",
-      "target": "ConnectionError"
-    },
-    {
-      "relation": "references",
-      "source": "DOC:issues.md",
-      "target": "DockerTimeout"
-    },
-    {
-      "relation": "references",
-      "source": "DOC:issues.md",
+      "source": "DOC:/Users/shivamsharma/projects/unified_memory/AGENTS.md",
       "target": "OpenClaw"
     },
     {
       "relation": "references",
-      "source": "DOC:issues.md",
-      "target": "Unified Memory"
+      "source": "DOC:/Users/shivamsharma/projects/unified_memory/AGENTS.md",
+      "target": "VoiceAI"
     },
     {
-      "relation": "caused_by",
-      "source": "ConnectionError",
-      "target": "DockerTimeout"
+      "relation": "references",
+      "source": "DOC:/Users/shivamsharma/projects/unified_memory/AGENTS.md",
+      "target": "Entity Name"
     },
     {
-      "relation": "uses",
-      "source": "OpenClaw",
-      "target": "Unified Memory"
+      "relation": "references",
+      "source": "DOC:/Users/shivamsharma/projects/unified_memory/AGENTS.md",
+      "target": "Project X"
+    },
+    {
+      "relation": "references",
+      "source": "DOC:/Users/shivamsharma/projects/unified_memory/AGENTS.md",
+      "target": "WorksFor::OpenClaw"
+    },
+    {
+      "relation": "references",
+      "source": "DOC:/Users/shivamsharma/projects/unified_memory/AGENTS.md",
+      "target": "Concept A"
+    },
+    {
+      "relation": "references",
+      "source": "DOC:/Users/shivamsharma/projects/unified_memory/AGENTS.md",
+      "target": "wikilinks"
     }
   ]
 }

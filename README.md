@@ -1,105 +1,172 @@
-# Unified Agent Memory System (UAMS)
+# Unified Agent Memory System
 
-The **Unified Agent Memory System (UAMS)** is a production-grade, local-first, multi-agent memory architecture designed to provide AI agents (such as Hermes, OpenClaw, and VoiceAI) with durable, graph-enhanced, and semantically searchable long-term memory.
+**Unified Agent Memory System (UAMS)** is a local-first shared brain for AI agents. It gives tools like OpenClaw, Hermes, Claude Code, Codex, VoiceAI, and custom agents one durable memory layer for codebase knowledge, bug-fix history, procedures, decisions, and entity relationships.
 
-## 🏗 System Architecture
+The goal is simple: when an agent fixes bug A today, every agent can retrieve what changed, why it changed, and how to avoid repeating the investigation tomorrow.
+
+## What It Does
+
+- **Shared memory vault:** Human-readable Markdown notes with YAML frontmatter, Obsidian wikilinks, and strict agent-writing rules in `AGENTS.md`.
+- **Auto-growing knowledge:** A watcher indexes new or changed memories into Qdrant and updates a NetworkX knowledge graph.
+- **Hybrid retrieval:** Agents query one API that combines semantic search, entity extraction, graph expansion, reranking, and context compression.
+- **Bug-fix recall:** Procedural memories and task notes make searches smaller and more accurate because past fixes become durable project knowledge.
+- **Agent SDK:** Python SDK and middleware for automatic pre-task memory injection and post-task memory distillation.
+- **One-command local setup:** `./install.sh` creates the Python environment, installs the watcher/API dependencies, and installs the SDK.
+
+## Architecture
 
 ```text
- ┌────────────────┐
- │    Obsidian    │
- └────────┬───────┘
-          │
-  Markdown Watcher
-          │
- ┌───────────────┼───────────────┐
- │                               │
- ┌───────▼────────┐      ┌────────▼────────┐
- │     Qdrant     │      │ Knowledge Graph │
- │ Semantic Store │      │      Neo4j      │
- └───────┬────────┘      └────────┬────────┘
- │                               │
- └───────────────┬───────────────┘
-                 │
-       Unified Retrieval API
-                 │
- ┌────────────────┼────────────────┐
- │                │                │
- ┌──────▼──────┐  ┌──────▼──────┐  ┌──────▼──────┐
- │   Hermes    │  │  OpenClaw   │  │ VoiceAgent  │
- └─────────────┘  └─────────────┘  └─────────────┘
+Markdown Vault
+  AGENTS.md, Concepts/, Projects/, Tasks/, Daily/
+        |
+        v
+Memory Watcher + Reindex Command
+        |
+        +--> Semantic Chunker --> Embeddings --> Qdrant
+        |
+        +--> Graph Extractor --> NetworkX Knowledge Graph
+        |
+        v
+Unified Retrieval API
+        |
+        v
+Agent SDK / Middleware
+  OpenClaw, Hermes, Claude Code, Codex, VoiceAI, custom agents
 ```
 
-## 🚀 Key Features by Phase
+## Quick Start
 
-### Phase 1: Canonical Memory Vault
-- **Obsidian-Native:** Memory is stored in human-readable Markdown, structured across `Concepts/`, `Daily/`, `Tasks/`, etc.
-- **Protocol Enforced:** Governed by `AGENTS.md` to ensure atomic, highly-linked, metadata-rich memory files.
+Requirements:
 
-### Phase 2: Automatic Embedding Pipeline
-- **Memory Watcher:** An asynchronous file watcher (`watchdog`) detects changes, debounces rapid saves, and processes modified memory files.
-- **Semantic Chunking:** An advanced chunker that splits text while preserving Markdown hierarchy (`H1 > H2 > H3`), code blocks, and Entity Wikilinks (`[[Entity]]`), generating deterministic hashes for chunks.
-
-### Phase 3: Vector Database (Qdrant)
-- **Local-First & Apple Silicon Optimized:** Uses local Qdrant via Docker.
-- **Dynamic Embeddings:** Uses `fastembed` (for native MPS/Metal acceleration) or `ollama` (for API-driven local models).
-- **Batch Processing:** Implements an async SQLite cache to prevent redundant embedding generation and executes batch upserts to Qdrant.
-
-### Phase 4: Unified Retrieval API (FastAPI)
-- **8-Step Search Pipeline:** Query Understanding → Intent Classification → Entity Extraction → Graph Expansion → Vector Retrieval → Reranking → Context Compression → Final Assembly.
-- **Endpoints:** Exposes `/search`, `/context`, `/remember`, `/procedures`, and `/entities` to the agents.
-
-### Phase 5: Hermes & OpenClaw Integration
-- **Agent Tools:** Provides callable functions for standard agent loops (`search_memory`, `store_memory`).
-- **Auto-Context Middleware:** Automatically intercepts prompts, retrieves highly compressed relevant memories, and injects them as `<memory_context>` seamlessly.
-- **Context Compression:** Deduplicates results, clusters by entity, and uses extractive summarization to aggressively reduce LLM token usage while preserving facts.
-
-### Phase 6: Knowledge Graph (Neo4j / NetworkX)
-- **Graph Extraction:** Parses unstructured Markdown to extract Entities and Relational Edges (`uses`, `fixes`, `caused_by`, `depends_on`).
-- **Hybrid Reranking:** Enhances semantic search by mathematically boosting retrieved chunks that have a structural graph relationship (e.g., `fixes`) to the user's query entities.
-- **Dual Store:** Uses NetworkX for rapid local n-hop traversals and Neo4j for persistent production storage.
-
-### Phase 7: Autonomous Memory Intelligence
-- **Distillation Engine:** A background process that ages and decays daily logs (30-day half-life).
-- **Lifecycle Management:** Automatically transitions memories (`raw` → `summarized` → `distilled`).
-- **Procedural Promotion:** Highly dense, important memories (e.g., bug fixes) are automatically extracted and rewritten as permanent Standard Operating Procedures (SOPs) in the `Tasks/` directory.
-
-## 🛠 Getting Started
-
-### Prerequisites
-- macOS (Apple Silicon recommended)
 - Python 3.11+
-- Docker & Docker Compose (for Qdrant)
-- `uv` (Fast Python package installer)
+- Docker or OrbStack for Qdrant
+- macOS or Linux
 
-### Installation & Execution
+Install:
 
-1. **Start the Vector Database (Qdrant)**
-   ```bash
-   cd memory_watcher
-   bash scripts/start_qdrant.sh
-   ```
+```bash
+git clone <your-repo-url> unified_memory
+cd unified_memory
+./install.sh
+```
 
-2. **Run the Memory Watcher (Background Sync)**
-   ```bash
-   cd memory_watcher
-   bash start.sh
-   ```
+Start everything:
 
-3. **Start the Unified Retrieval API**
-   ```bash
-   cd memory_watcher
-   source .venv/bin/activate
-   uvicorn api.main:app --host 0.0.0.0 --port 8000
-   ```
-   *View the Swagger OpenAPI documentation at: `http://localhost:8000/docs`*
+```bash
+./uams start
+```
 
-4. **Run Autonomous Distillation Cycle (Cron/Scheduled)**
-   ```bash
-   cd memory_watcher
-   source .venv/bin/activate
-   python intelligence/distiller.py
-   ```
+Open the API docs:
 
-## 🧠 Using with OpenClaw
+```text
+http://localhost:8000/docs
+```
 
-To integrate this with your local OpenClaw or Hermes instance, install the middleware located in `memory_watcher/integrations/openclaw/`. Ensure your system prompt is appended with the rules defined in `prompts.md`.
+Index the whole vault:
+
+```bash
+./uams index
+```
+
+Check status or stop services:
+
+```bash
+./uams status
+./uams stop
+```
+
+## Agent Integration
+
+Python agents can use the SDK directly:
+
+```python
+import asyncio
+from uams_sdk import UAMSClient
+
+async def main():
+    client = UAMSClient("http://localhost:8000")
+
+    context = await client.retrieve_context("Fix the login timeout regression")
+    print(context)
+
+    await client.store_memory(
+        "Resolved [[Login Timeout Regression]] by increasing the session refresh grace window.",
+        category="procedural",
+        tags=["#bugfix", "#auth"],
+    )
+
+asyncio.run(main())
+```
+
+Middleware can automatically:
+
+- retrieve procedures before the agent starts work,
+- inject compressed historical context into the prompt,
+- extract durable insights after the task,
+- store distilled memories back into the vault.
+
+See [uams_sdk/README.md](uams_sdk/README.md) and [memory_watcher/integrations/openclaw](memory_watcher/integrations/openclaw) for examples.
+
+## Memory Model
+
+UAMS stores knowledge as atomic Markdown notes:
+
+- `Concepts/`: stable facts, architecture, domain concepts.
+- `Projects/`: active or archived project-level memory.
+- `Tasks/`: reusable procedures, debugging playbooks, and coding directives.
+- `Daily/`: short-term episodic notes that can later be promoted.
+- `People/`, `Research/`, `Logs/`, `AI/`: supporting vault areas.
+
+Every durable memory should include:
+
+- YAML frontmatter with `type`, tags, aliases/entities, and timestamps where relevant.
+- Wikilinks for important entities, such as `[[OpenClaw]]` or `[[Qdrant]]`.
+- Short sections with `##` and `###` headers so retrieval chunks stay focused.
+
+The full write protocol lives in [AGENTS.md](AGENTS.md).
+
+## API Surface
+
+- `POST /search`: semantic and graph-aware retrieval.
+- `POST /context`: compressed context block for agent prompts.
+- `POST /remember`: direct agent write path.
+- `POST /procedures`: procedure retrieval for coding and operational tasks.
+- `GET /graph/neighborhood/{entity}`: graph neighborhood lookup.
+- `GET /health`: API health check.
+
+## Repository Layout
+
+```text
+.
+├── AGENTS.md                  # Memory-writing protocol for agents
+├── install.sh                 # One-command local installer
+├── uams                       # Service control: start, stop, status, index, logs
+├── memory_watcher/            # Watcher, ingestion pipeline, retrieval API
+├── uams_sdk/                  # Python SDK and agent middleware
+├── Concepts/ Projects/ Tasks/ # Canonical memory vault
+└── AI/                        # Derived graph, embedding, and cache areas
+```
+
+## Open Source Roadmap
+
+- Package the API and watcher as installable Python console commands.
+- Add templates for Claude Code, Codex, OpenClaw, Hermes, and LangChain-style agents.
+- Replace heuristic post-task distillation with configurable local or hosted LLM distillers.
+- Add first-class repository scanners for code symbols, commits, PRs, and issue history.
+- Add memory quality checks for missing frontmatter, orphan notes, and oversized chunks.
+- Publish Docker Compose profiles for local-only, team, and production setups.
+
+## Development
+
+Run unit tests from the repo root:
+
+```bash
+memory_watcher/.venv/bin/python -m pytest memory_watcher/tests memory_watcher/api/tests
+```
+
+Rebuild the knowledge graph only:
+
+```bash
+cd memory_watcher
+.venv/bin/python scripts/force_graph_rebuild.py
+```

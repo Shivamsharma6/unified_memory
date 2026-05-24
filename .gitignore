@@ -1,8 +1,10 @@
 # Environments
 .env
 .venv
+**/.venv/
 env/
 venv/
+**/venv/
 ENV/
 env.bak/
 venv.bak/
@@ -12,6 +14,9 @@ AI/RetrievalCache/*
 !AI/RetrievalCache/README.md
 AI/Embeddings/*.sqlite
 AI/Embeddings/*.db
+memory_watcher/*.log
+memory_watcher/*.db
+memory_watcher/knowledge_graph*.html
 
 # Python
 __pycache__/

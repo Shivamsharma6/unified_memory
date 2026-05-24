@@ -22,8 +22,10 @@ class RetrievalPipeline:
         self.fallback_entity_pattern = re.compile(r'\b[A-Z][a-zA-Z0-9]+\b')
 
     async def initialize(self):
-        await self.vector_store.initialize_collections()
-        await self.embedder.initialize()
+        try:
+            await self.vector_store.initialize_collections()
+        except Exception as e:
+            logger.warning("Vector store unavailable during startup: %s", e)
         
         # Load the graph database / local JSON
         try:
