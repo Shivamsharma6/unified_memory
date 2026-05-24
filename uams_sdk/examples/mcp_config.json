@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "uams": {
+      "command": "/absolute/path/to/unified_memory/uams",
+      "args": ["mcp"],
+      "env": {
+        "UAMS_API_URL": "http://localhost:8000"
+      }
+    }
+  }
+}

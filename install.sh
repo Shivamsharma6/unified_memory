@@ -24,6 +24,7 @@ fi
 
 echo "Creating Python environment..."
 "$PYTHON_BIN" -m venv "$VENV_DIR"
+"$VENV_DIR/bin/python" -m ensurepip --upgrade >/dev/null 2>&1 || true
 "$VENV_DIR/bin/python" -m pip install --upgrade pip
 "$VENV_DIR/bin/pip" install -r "$WATCHER_DIR/requirements.txt"
 "$VENV_DIR/bin/pip" install -e "$ROOT_DIR/uams_sdk"

@@ -75,7 +75,61 @@ Check status or stop services:
 ./uams stop
 ```
 
+Run the MCP adapter for MCP-aware agents:
+
+```bash
+./uams mcp
+```
+
 ## Agent Integration
+
+### MCP Adapter
+
+The recommended default integration is MCP. Configure the agent to launch UAMS over stdio:
+
+```json
+{
+  "mcpServers": {
+    "uams": {
+      "command": "/absolute/path/to/unified_memory/uams",
+      "args": ["mcp"],
+      "env": {
+        "UAMS_API_URL": "http://localhost:8000"
+      }
+    }
+  }
+}
+```
+
+Once connected, agents discover these tools automatically:
+
+- `get_context`: retrieve compressed task context before work.
+- `get_procedures`: retrieve relevant rules and procedures.
+- `search_memory`: targeted hybrid semantic + graph search.
+- `remember`: store distilled durable memory.
+- `store_fix_summary`: store structured bug-fix knowledge.
+- `get_related_entities`: traverse the knowledge graph.
+- `summarize_memory`: summarize a topic.
+- `health`: check UAMS API connectivity.
+
+The MCP server also exposes:
+
+- `uams://memory-policy`: default memory operating policy.
+- `use_uams_memory`: prompt template that makes the agent retrieve UAMS context before acting and store durable outcomes after work.
+
+For best results, set the agent’s system/developer instructions to treat UAMS as mandatory memory:
+
+```text
+Before each task, use UAMS `get_procedures` and `get_context`.
+After durable work, use UAMS `remember` or `store_fix_summary`.
+Do not store raw transcripts; store distilled atomic knowledge only.
+```
+
+Start the API/watch service first:
+
+```bash
+./uams start
+```
 
 Python agents can use the SDK directly:
 
@@ -140,9 +194,9 @@ The full write protocol lives in [AGENTS.md](AGENTS.md).
 .
 ├── AGENTS.md                  # Memory-writing protocol for agents
 ├── install.sh                 # One-command local installer
-├── uams                       # Service control: start, stop, status, index, logs
+├── uams                       # Service control: start, stop, status, index, logs, mcp
 ├── memory_watcher/            # Watcher, ingestion pipeline, retrieval API
-├── uams_sdk/                  # Python SDK and agent middleware
+├── uams_sdk/                  # Python SDK, MCP server, and agent middleware
 ├── Concepts/ Projects/ Tasks/ # Canonical memory vault
 └── AI/                        # Derived graph, embedding, and cache areas
 ```
