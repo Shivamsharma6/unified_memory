@@ -213,6 +213,89 @@ Middleware can automatically:
 See [uams_sdk/README.md](uams_sdk/README.md) and [memory_watcher/integrations/openclaw](memory_watcher/integrations/openclaw) for examples.
 
 ## Memory Model
+## Memory Types
+
+UAMS now supports **7 distinct memory categories**, each with its own Qdrant collection and retrieval strategy:
+
+| Category | Purpose | Collection |
+|----------|---------|------------|
+| `semantic` | Facts, concepts, domain knowledge | `semantic_memory` |
+| `episodic` | Experiences, events, interactions (with emotional metadata) | `episodic_memory` |
+| `procedural` | How-to knowledge, workflows, procedures | `procedural_memory` |
+| `identity` | Stable personality traits, preferences | `identity_memory` |
+| `goal` | Ongoing objectives, project states | `goal_memory` |
+| `reflection` | Self-analysis, lessons learned, patterns | `reflection_memory` |
+| `relationship` | Person-specific dynamics, communication styles | `relationship_memory` |
+
+### Episodic Memory Schema
+
+Episodic memories store **experiences**, not raw transcripts. Each record captures:
+
+- **Emotional state**: frustration, excitement, confidence, stress, satisfaction (0.0–1.0)
+- **Context**: platform, location, tools used, session ID
+- **Outcome**: success flag, resolution, consequences, lessons learned
+- **Importance**: weighted score (0.0–1.0) determining long-term survival
+- **Relationships**: linked memory IDs, participants, source agent
+
+```python
+from memory_watcher.memory_types import (
+    EpisodicMemory, EmotionalState, ContextData, OutcomeData,
+)
+
+mem = EpisodicMemory(
+    event_type="decision",
+    summary="Chose Qdrant over Pinecone for vector storage",
+    participants=["Shivam", "Hermes"],
+    emotional_state=EmotionalState(excitement=0.8, confidence=0.9),
+    importance=0.85,
+    context=ContextData(platform="cli", tools_used=["qdrant"]),
+    outcome=OutcomeData(success=True, lessons_learned=["Qdrant has better local support"]),
+    source="hermes",
+)
+```
+
+### Memory Ingestion Pipeline
+
+Every meaningful interaction flows through a 6-stage pipeline:
+
+```
+Conversation → Summarization → Emotion extraction →
+Importance scoring → Memory classification → Storage
+```
+
+The pipeline auto-classifies content into the appropriate memory type and creates structured records with emotional metadata and importance scores.
+
+### Importance Scoring
+
+Memories are scored on a 0.0–1.0 scale using:
+
+```
+importance = emotional_weight * 0.3 + novelty * 0.2 + goal_relevance * 0.3 + repetition * 0.2
+```
+
+- **Emotional weight**: average intensity of all emotion dimensions
+- **Novelty**: ratio of unique/rare words to common words
+- **Goal relevance**: proximity to stated objectives and priorities
+- **Repetition**: how often the topic has been mentioned
+
+Category-specific thresholds determine which memories survive consolidation (e.g., episodic: 0.3, reflection: 0.4).
+
+### Memory Consolidation
+
+Periodic consolidation jobs compress raw memories into stable knowledge:
+
+```
+Raw memories → Cluster similar → Summarize patterns →
+Create abstractions → Reduce redundancy
+```
+
+Example: 50 conversations about optimization → *"User consistently prioritizes system efficiency over simplicity."*
+
+The `MemoryConsolidator` provides:
+
+- `consolidate()`: full consolidation pipeline with statistics
+- `get_low_value_memories()`: retrieve memories below importance threshold
+- `promote_to_concept()`: convert episodic clusters into semantic concepts
 
 UAMS stores knowledge as atomic Markdown notes:
 
