@@ -116,6 +116,57 @@ Check the local install:
 
 ## Agent Integration
 
+### MCP Server
+
+The UAMS MCP server exposes a **retrieve-then-store** pattern: agents query UAMS before acting, then store durable outcomes after work. This ensures every agent shares a single memory layer.
+
+**Protocol:**
+
+1. **Retrieve** — Call `get_context` or `get_procedures` for relevant background.
+2. **Act** — Use the retrieved memory as grounding before coding or answering.
+3. **Store** — After durable work, call `remember` or `store_fix_summary` with distilled, non-transcript memory.
+
+**Available Tools:**
+
+| Tool | Direction | Description |
+|------|-----------|-------------|
+| `get_context` | Read | Retrieve compressed task context before work. |
+| `get_procedures` | Read | Retrieve relevant rules and procedures. |
+| `search_memory` | Read | Targeted hybrid semantic + graph search. |
+| `remember` | Write | Store distilled durable memory. |
+| `store_fix_summary` | Write | Store structured bug-fix knowledge. |
+| `get_related_entities` | Read | Traverse the knowledge graph. |
+| `summarize_memory` | Read | Summarize a topic. |
+| `health` | Read | Check UAMS API connectivity. |
+
+**Codex Configuration (already applied):**
+
+The UAMS MCP server is configured in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.uams]
+command = "/Users/shivamsharma/projects/unified_memory/uams"
+args = ["mcp"]
+env = {UAMS_API_URL = "http://localhost:8000"}
+```
+
+Verify with:
+
+```bash
+./uams mcp-config codex
+```
+
+**Other Agents:**
+
+Generate MCP config for other agents:
+
+```bash
+./uams mcp-config json        # Claude Code / Cursor / Windsurf
+./uams mcp-config all          # All formats
+./uams integrate               # Auto-integrate with local agents
+```
+
+
 ### MCP Adapter
 
 The recommended default integration is MCP. Configure the agent to launch UAMS over stdio:
