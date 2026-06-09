@@ -8,6 +8,7 @@ class SearchRequest(BaseModel):
     collections: List[str] = Field(default_factory=list)
     min_score: float = 0.7
     compress: bool = True
+    max_tokens: int = 1500
 
 class SearchResult(BaseModel):
     chunk_id: str

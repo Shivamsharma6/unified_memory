@@ -12,7 +12,24 @@ client = TestClient(app)
 def test_health_check():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json()["status"] == "healthy"
+    assert "status" in response.json()
+    assert "components" in response.json()
+
+
+def test_health_check_reports_unavailable_qdrant(monkeypatch):
+    class BrokenQdrantClient:
+        async def get_collections(self):
+            raise RuntimeError("qdrant offline")
+
+    monkeypatch.setattr(api_main.pipeline.vector_store, "client", BrokenQdrantClient())
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "degraded"
+    assert body["components"]["qdrant"]["status"] == "unavailable"
+    assert "qdrant offline" in body["components"]["qdrant"]["detail"]
 
 def test_search_endpoint():
     # Since we can't spin up Qdrant reliably in a fast unit test without mocking,

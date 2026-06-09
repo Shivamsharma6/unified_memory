@@ -16,7 +16,12 @@ AI/Embeddings/*.sqlite
 AI/Embeddings/*.db
 memory_watcher/*.log
 memory_watcher/*.db
+memory_watcher/.pids/
+memory_watcher/knowledge_graph.json
 memory_watcher/knowledge_graph*.html
+*.pem
+.pytest_cache/
+**/.pytest_cache/
 
 # Python
 __pycache__/

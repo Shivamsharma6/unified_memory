@@ -81,12 +81,32 @@ class RetrievalPipeline:
         doc = await self.embedder.embed(doc)
         query_vector = doc.chunks[0].embedding
 
-        collection = f"{intent}_memory" if intent in ["semantic", "episodic", "procedural"] else "semantic_memory"
+        collection = "summaries" if intent == "summary" else (
+            f"{intent}_memory" if intent in ["semantic", "episodic", "procedural"] else "semantic_memory"
+        )
         
         results = []
-        # In a real scenario, we might also filter by expanded_entities here
-        base_results = await self.vector_store.hybrid_search(query_vector, collection, limit=limit)
-        results.extend(base_results)
+        seen_ids = set()
+
+        async def add_results(entity_filter: str | None = None):
+            matches = await self.vector_store.hybrid_search(
+                query_vector,
+                collection,
+                limit=limit,
+                entity_filter=entity_filter,
+            )
+            for match in matches:
+                match_id = match.get("id") if isinstance(match, dict) else getattr(match, "id", None)
+                dedupe_key = str(match_id or id(match))
+                if dedupe_key in seen_ids:
+                    continue
+                seen_ids.add(dedupe_key)
+                results.append(match)
+
+        await add_results()
+        for entity in expanded_entities:
+            await add_results(entity)
+
         return results
 
     async def _step6_rerank(self, results: List[Any], query_entities: List[str]) -> List[SearchResult]:
@@ -165,6 +185,8 @@ class RetrievalPipeline:
         
         # Graph-Aware Rerank
         ranked_results = await self._step6_rerank(raw_results, all_query_entities)
+        ranked_results.sort(key=lambda r: (r.importance, r.score), reverse=True)
+        ranked_results = ranked_results[: max(request.limit, 0)]
         
         # Compress
         compressed_results = await self._step7_context_compression(ranked_results, request.compress, request)

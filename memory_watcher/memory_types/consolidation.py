@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 from memory_watcher.memory_types.memory_types import MemoryCategory, get_memory_type
 from memory_watcher.memory_types.episodic import EpisodicMemory
-from memory_watcher.memory_types.scoring import ImportanceScorer
+from memory_watcher.memory_types.scoring import ImportanceScorer, ImportanceScore
 
 logger = logging.getLogger(__name__)
 

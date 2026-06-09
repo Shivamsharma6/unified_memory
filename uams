@@ -30,9 +30,22 @@ require_venv() {
   fi
 }
 
+process_matches() {
+  local pid="$1"
+  local pattern="$2"
+  local command
+  command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+  [ -n "$command" ] && [[ "$command" =~ $pattern ]]
+}
+
 is_running() {
   local pid_file="$1"
-  [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file")" >/dev/null 2>&1
+  local pattern="${2:-}"
+  [ -f "$pid_file" ] || return 1
+  local pid
+  pid="$(cat "$pid_file")"
+  kill -0 "$pid" >/dev/null 2>&1 || return 1
+  [ -z "$pattern" ] || process_matches "$pid" "$pattern"
 }
 
 start_qdrant() {
@@ -46,31 +59,48 @@ start_qdrant() {
 }
 
 start_api() {
-  if is_running "$API_PID_FILE"; then
+  if is_running "$API_PID_FILE" "uvicorn .*api.main:app|python.*-m uvicorn .*api.main:app"; then
     echo "API already running on PID $(cat "$API_PID_FILE")."
     return
   fi
   mkdir -p "$PID_DIR"
-  (cd "$WATCHER_DIR" && nohup "$VENV_DIR/bin/uvicorn" api.main:app --host 0.0.0.0 --port "${UAMS_API_PORT:-8000}" > api.log 2>&1 & echo $! > "$API_PID_FILE")
-  echo "API started on PID $(cat "$API_PID_FILE")."
+  (cd "$WATCHER_DIR"; nohup "$VENV_DIR/bin/python" -m uvicorn api.main:app --host "${UAMS_API_HOST:-127.0.0.1}" --port "${UAMS_API_PORT:-8000}" > api.log 2>&1 & echo $! > "$API_PID_FILE")
+  sleep 1
+  if is_running "$API_PID_FILE" "uvicorn .*api.main:app|python.*-m uvicorn .*api.main:app"; then
+    echo "API started on PID $(cat "$API_PID_FILE")."
+  else
+    rm -f "$API_PID_FILE"
+    echo "API failed to stay running. Check $WATCHER_DIR/api.log." >&2
+    exit 1
+  fi
 }
 
 start_watcher() {
-  if is_running "$WATCHER_PID_FILE"; then
+  if is_running "$WATCHER_PID_FILE" "python.*main.py"; then
     echo "Watcher already running on PID $(cat "$WATCHER_PID_FILE")."
     return
   fi
   mkdir -p "$PID_DIR"
-  (cd "$WATCHER_DIR" && nohup "$VENV_DIR/bin/python" main.py > watcher.log 2>&1 & echo $! > "$WATCHER_PID_FILE")
-  echo "Watcher started on PID $(cat "$WATCHER_PID_FILE")."
+  (cd "$WATCHER_DIR"; nohup "$VENV_DIR/bin/python" main.py > watcher.log 2>&1 & echo $! > "$WATCHER_PID_FILE")
+  sleep 1
+  if is_running "$WATCHER_PID_FILE" "python.*main.py"; then
+    echo "Watcher started on PID $(cat "$WATCHER_PID_FILE")."
+  else
+    rm -f "$WATCHER_PID_FILE"
+    echo "Watcher failed to stay running. Check $WATCHER_DIR/watcher.log." >&2
+    exit 1
+  fi
 }
 
 stop_one() {
   local name="$1"
   local pid_file="$2"
-  if is_running "$pid_file"; then
+  local pattern="$3"
+  if is_running "$pid_file" "$pattern"; then
     kill "$(cat "$pid_file")"
     echo "$name stopped."
+  elif [ -f "$pid_file" ]; then
+    echo "$name has a stale PID file; removing it."
   else
     echo "$name is not running."
   fi
@@ -86,19 +116,19 @@ case "${1:-}" in
     start_qdrant
     start_api
     start_watcher
-    echo "UAMS is online: http://localhost:${UAMS_API_PORT:-8000}/docs"
+    echo "UAMS is online: http://${UAMS_API_HOST:-127.0.0.1}:${UAMS_API_PORT:-8000}/docs"
     ;;
   stop)
-    stop_one "Watcher" "$WATCHER_PID_FILE"
-    stop_one "API" "$API_PID_FILE"
+    stop_one "Watcher" "$WATCHER_PID_FILE" "python.*main.py"
+    stop_one "API" "$API_PID_FILE" "uvicorn .*api.main:app|python.*-m uvicorn .*api.main:app"
     ;;
   restart)
     "$0" stop
     "$0" start
     ;;
   status)
-    if is_running "$API_PID_FILE"; then echo "API: running on PID $(cat "$API_PID_FILE")"; else echo "API: stopped"; fi
-    if is_running "$WATCHER_PID_FILE"; then echo "Watcher: running on PID $(cat "$WATCHER_PID_FILE")"; else echo "Watcher: stopped"; fi
+    if is_running "$API_PID_FILE" "uvicorn .*api.main:app|python.*-m uvicorn .*api.main:app"; then echo "API: running on PID $(cat "$API_PID_FILE")"; else echo "API: stopped"; fi
+    if is_running "$WATCHER_PID_FILE" "python.*main.py"; then echo "Watcher: running on PID $(cat "$WATCHER_PID_FILE")"; else echo "Watcher: stopped"; fi
     if ! docker info >/dev/null 2>&1; then
       echo "Qdrant: unknown (Docker is not running)"
     else

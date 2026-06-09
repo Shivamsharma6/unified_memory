@@ -108,7 +108,7 @@ async def get_relations(entity: str):
 @app.post("/context", tags=["Orchestration"])
 async def get_context(request: ContextRequest):
     """Assemble a multi-document RAG context block optimized for LLM token limits."""
-    search_req = SearchRequest(query=request.task, limit=10, compress=True)
+    search_req = SearchRequest(query=request.task, limit=10, compress=True, max_tokens=request.max_tokens)
     res = await pipeline.search(search_req)
     context_str = "\n\n".join([f"Source: {r.source_file}\n{r.text}" for r in res.results])
     return {"task": request.task, "context": context_str, "tokens": res.context_tokens_used}
@@ -120,4 +120,22 @@ async def get_procedures(request: ProcedureRequest):
 
 @app.get("/health", tags=["System"])
 async def health_check():
-    return {"status": "healthy", "components": {"qdrant": "ok", "embeddings": "ok"}}
+    components = {}
+
+    try:
+        collections = await pipeline.vector_store.client.get_collections()
+        components["qdrant"] = {
+            "status": "ok",
+            "collections": [collection.name for collection in collections.collections],
+        }
+    except Exception as exc:
+        components["qdrant"] = {"status": "unavailable", "detail": str(exc)}
+
+    components["embeddings"] = {
+        "status": "ok",
+        "provider": pipeline.embedder.provider,
+        "model": pipeline.embedder.model_name,
+    }
+
+    status = "healthy" if all(c["status"] == "ok" for c in components.values()) else "degraded"
+    return {"status": status, "components": components}
