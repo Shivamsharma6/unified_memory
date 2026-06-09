@@ -1,5 +1,7 @@
 import httpx
 import logging
+import json
+from datetime import date
 from typing import Dict, Any, List, Optional
 from .cache import SDKCache
 from .exceptions import UAMSError, UAMSConnectionError, UAMSAPIError
@@ -65,6 +67,23 @@ class UAMSClient:
         res = await self._request("POST", f"/procedures", {"task": task}, use_cache=True)
         return res.get("procedures", [])
 
+    async def begin_task(self, task: str, max_tokens: int = 2000) -> Dict[str, Any]:
+        """Default memory preflight agents should call before doing work."""
+        procedures = await self.retrieve_procedures(task)
+        context = await self.retrieve_context(task, max_tokens=max_tokens)
+        return {
+            "task": task,
+            "status": "ready",
+            "procedures": procedures,
+            "context": context,
+            "max_tokens": max_tokens,
+            "memory_policy": (
+                "Always call begin_task before non-trivial work. Use the procedures and "
+                "context as grounding. Call search_memory when recall is needed during "
+                "the task. Call end_task after durable work to store distilled outcomes."
+            ),
+        }
+
     async def store_memory(self, text: str, category: str = "episodic", tags: List[str] = None) -> bool:
         """Agent memory write support. Clears cache to ensure fresh reads."""
         payload = {"text": text, "category": category, "tags": tags or []}
@@ -75,6 +94,54 @@ class UAMSClient:
         except UAMSError as e:
             logger.error(f"Failed to store memory: {e}")
             return False
+
+    async def end_task(
+        self,
+        task: str,
+        outcome: str,
+        files: Optional[List[str]] = None,
+        decisions: Optional[List[str]] = None,
+        fixes: Optional[List[str]] = None,
+        entities: Optional[List[str]] = None,
+        tags: Optional[List[str]] = None,
+        category: str = "episodic",
+    ) -> Dict[str, Any]:
+        """Store a distilled task outcome after durable work completes."""
+        all_tags = list(dict.fromkeys((tags or []) + ["#auto-distilled", "#task-outcome"]))
+        entity_links = " ".join(f"[[{entity}]]" for entity in entities or [])
+        file_lines = "\n".join(f"- `{path}`" for path in files or []) or "- Not specified"
+        decision_lines = "\n".join(f"- {item}" for item in decisions or []) or "- None recorded"
+        fix_lines = "\n".join(f"- {item}" for item in fixes or []) or "- None recorded"
+        today = date.today().isoformat()
+
+        tags_json = json.dumps(all_tags)
+        text = f"""---
+type: {category}
+date: {today}
+tags: {tags_json}
+---
+# Task Outcome: {task}
+
+## TL;DR
+{outcome.strip()}
+
+## Entities
+{entity_links or f"[[{task}]]"}
+
+## Files
+{file_lines}
+
+## Decisions
+{decision_lines}
+
+## Fixes
+{fix_lines}
+
+## Retrieval Notes
+Future agents should search for [[{task}]], the listed entities, and the listed files before repeating related work.
+"""
+        ok = await self.store_memory(text=text, category=category, tags=all_tags)
+        return {"ok": ok, "category": category, "tags": all_tags}
 
     async def distill_memory(self, topic: str) -> str:
         """Trigger summarization/distillation of a topic."""

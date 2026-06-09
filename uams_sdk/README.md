@@ -22,13 +22,19 @@ from uams_sdk import UAMSClient
 
 async def main():
     client = UAMSClient(base_url="http://localhost:8000")
-    
-    # Retrieve optimized context
-    context = await client.retrieve_context("How do I fix Docker file locks?")
-    print(context)
-    
-    # Store a new memory
-    await client.store_memory("User prefers dark mode.", tags=["#preferences"])
+    task = "How do I fix Docker file locks?"
+
+    # Default preflight before the agent works.
+    memory = await client.begin_task(task)
+    print(memory["context"])
+
+    # Default write-back after durable work.
+    await client.end_task(
+        task=task,
+        outcome="Documented the Docker file-lock workaround.",
+        entities=["Docker File Locks"],
+        tags=["#procedure"],
+    )
 
 asyncio.run(main())
 ```
@@ -73,6 +79,15 @@ Generate snippets from the repository root:
 
 Discovered MCP capabilities:
 
-- Tools: `health`, `search_memory`, `get_context`, `get_procedures`, `remember`, `get_related_entities`, `summarize_memory`, `store_fix_summary`
+- Tools: `begin_task`, `end_task`, `health`, `search_memory`, `get_context`, `get_procedures`, `remember`, `get_related_entities`, `summarize_memory`, `store_fix_summary`
 - Resource: `uams://memory-policy`
 - Prompt: `use_uams_memory`
+
+Agent default protocol:
+
+```text
+Before each non-trivial task, call `begin_task`.
+During work, call `search_memory` when more recall is needed.
+After durable work, call `end_task`.
+Never store raw transcripts; store distilled facts, decisions, fixes, and procedures.
+```

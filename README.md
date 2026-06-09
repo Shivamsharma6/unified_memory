@@ -118,21 +118,24 @@ Check the local install:
 
 ### MCP Server
 
-The UAMS MCP server exposes a **retrieve-then-store** pattern: agents query UAMS before acting, then store durable outcomes after work. This ensures every agent shares a single memory layer.
+The UAMS MCP server exposes a **begin-then-end task lifecycle**: agents call `begin_task` before acting, then call `end_task` after durable work. This gives agents one obvious default memory habit instead of several optional tools.
 
 **Protocol:**
 
-1. **Retrieve** — Call `get_context` or `get_procedures` for relevant background.
-2. **Act** — Use the retrieved memory as grounding before coding or answering.
-3. **Store** — After durable work, call `remember` or `store_fix_summary` with distilled, non-transcript memory.
+1. **Begin** — Call `begin_task` with the user task.
+2. **Act** — Use the returned procedures and context as grounding before coding or answering.
+3. **Recall** — Use `search_memory` during work when more targeted recall is needed.
+4. **End** — After durable work, call `end_task` with distilled, non-transcript outcomes.
 
 **Available Tools:**
 
 | Tool | Direction | Description |
 |------|-----------|-------------|
-| `get_context` | Read | Retrieve compressed task context before work. |
-| `get_procedures` | Read | Retrieve relevant rules and procedures. |
+| `begin_task` | Read | Default first call before work; retrieves procedures, compressed context, and memory policy. |
+| `end_task` | Write | Default final call after durable work; stores a distilled task outcome. |
 | `search_memory` | Read | Targeted hybrid semantic + graph search. |
+| `get_context` | Read | Lower-level context retrieval. |
+| `get_procedures` | Read | Lower-level procedure retrieval. |
 | `remember` | Write | Store distilled durable memory. |
 | `store_fix_summary` | Write | Store structured bug-fix knowledge. |
 | `get_related_entities` | Read | Traverse the knowledge graph. |
@@ -199,9 +202,11 @@ For Codex, generate TOML for `~/.codex/config.toml`:
 
 Once connected, agents discover these tools automatically:
 
-- `get_context`: retrieve compressed task context before work.
-- `get_procedures`: retrieve relevant rules and procedures.
+- `begin_task`: default first call before work; retrieves procedures, context, and memory policy.
+- `end_task`: default final call after durable work; stores distilled task outcomes.
 - `search_memory`: targeted hybrid semantic + graph search.
+- `get_context`: lower-level compressed task context retrieval.
+- `get_procedures`: lower-level procedure retrieval.
 - `remember`: store distilled durable memory.
 - `store_fix_summary`: store structured bug-fix knowledge.
 - `get_related_entities`: traverse the knowledge graph.
@@ -211,13 +216,14 @@ Once connected, agents discover these tools automatically:
 The MCP server also exposes:
 
 - `uams://memory-policy`: default memory operating policy.
-- `use_uams_memory`: prompt template that makes the agent retrieve UAMS context before acting and store durable outcomes after work.
+- `use_uams_memory`: prompt template that makes the agent call `begin_task` before acting and `end_task` after durable outcomes.
 
 For best results, set the agent’s system/developer instructions to treat UAMS as mandatory memory:
 
 ```text
-Before each task, use UAMS `get_procedures` and `get_context`.
-After durable work, use UAMS `remember` or `store_fix_summary`.
+Before each non-trivial task, call UAMS `begin_task`.
+During work, call UAMS `search_memory` when more recall is needed.
+After durable work, call UAMS `end_task`.
 Do not store raw transcripts; store distilled atomic knowledge only.
 ```
 

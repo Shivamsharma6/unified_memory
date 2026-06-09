@@ -13,8 +13,9 @@ mcp = FastMCP(
     "Unified Agent Memory",
     instructions=(
         "Use UAMS as the default shared memory backend. Before coding or answering, "
-        "call get_context and get_procedures for relevant background. After durable "
-        "work, call remember or store_fix_summary with distilled, non-transcript memory."
+        "call begin_task for relevant procedures and context. After durable work, "
+        "call end_task with distilled, non-transcript outcomes. Use search_memory "
+        "during work when additional recall is needed."
     ),
 )
 
@@ -29,11 +30,11 @@ def memory_policy() -> str:
     return """# UAMS Default Memory Policy
 
 Before each task:
-- Call `get_procedures` for task-specific rules.
-- Call `get_context` for compressed historical and graph context.
+- Call `begin_task` for task-specific rules, compressed historical context, and graph context.
 - Use `search_memory` when targeted lookup is needed.
 
 After each task:
+- Call `end_task` with distilled outcomes.
 - Store only durable facts, decisions, fixes, and procedures.
 - Never store raw chat transcripts.
 - Prefer wikilinks like `[[Entity Name]]` and tags like `#bugfix`.
@@ -49,10 +50,10 @@ def use_uams_memory(task: str) -> str:
 Task: {task}
 
 Protocol:
-1. Call `get_procedures` with the task.
-2. Call `get_context` with the task.
-3. Use the retrieved memory as grounding before acting.
-4. After completing durable work, call `remember` or `store_fix_summary`.
+1. Call `begin_task` with the task.
+2. Use the returned procedures and context as grounding before acting.
+3. Use `search_memory` during work when additional recall is needed.
+4. After completing durable work, call `end_task`.
 5. Store distilled atomic memory only, never raw conversation."""
 
 
@@ -76,6 +77,12 @@ async def search_memory(
         entities=entities or [],
         compress=compress,
     )
+
+
+@mcp.tool()
+async def begin_task(task: str, max_tokens: int = 2000) -> dict[str, Any]:
+    """Default first call before work: retrieve procedures, context, and memory policy."""
+    return await _client().begin_task(task=task, max_tokens=max_tokens)
 
 
 @mcp.tool()
@@ -105,6 +112,30 @@ async def remember(
         tags=tags or [],
     )
     return {"ok": ok, "category": category, "tags": tags or []}
+
+
+@mcp.tool()
+async def end_task(
+    task: str,
+    outcome: str,
+    files: list[str] | None = None,
+    decisions: list[str] | None = None,
+    fixes: list[str] | None = None,
+    entities: list[str] | None = None,
+    tags: list[str] | None = None,
+    category: str = "episodic",
+) -> dict[str, Any]:
+    """Default final call after durable work: store distilled task outcome memory."""
+    return await _client().end_task(
+        task=task,
+        outcome=outcome,
+        files=files or [],
+        decisions=decisions or [],
+        fixes=fixes or [],
+        entities=entities or [],
+        tags=tags or [],
+        category=category,
+    )
 
 
 @mcp.tool()

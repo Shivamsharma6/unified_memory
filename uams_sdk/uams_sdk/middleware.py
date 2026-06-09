@@ -35,13 +35,13 @@ class AutonomousMemoryMiddleware:
         task_type = self._detect_task_type(user_prompt)
         logger.info(f"[UAMS Middleware] Task detected as '{task_type}'. Fetching memory...")
 
-        # 3. Retrieve Procedures First
-        procedures = await self.client.retrieve_procedures(user_prompt)
+        memory_packet = await self.client.begin_task(
+            task=user_prompt,
+            max_tokens=self.max_context_tokens,
+        )
+        procedures = memory_packet.get("procedures", [])
         proc_text = "\n".join(procedures) if procedures else "No specific operating procedures found."
-
-        # 2 & 4. Retrieve & Compress Context
-        # The API's /context endpoint natively handles extraction, graph-expansion, and compression
-        context = await self.client.retrieve_context(user_prompt, max_tokens=self.max_context_tokens)
+        context = memory_packet.get("context", "")
         context_text = context if context else "No historical context found."
 
         # 5. Inject memory into prompt
@@ -104,10 +104,11 @@ User Request: {user_prompt}"""
             
             # 3 & 4. Store memory and update relationships
             # The UAMS watcher handles graph relationship updates upon file creation
-            await self.client.store_memory(
-                text=f"Derived from task: '{user_prompt}'\n\n{insight['text']}", 
-                category=insight['category'],
-                tags=["#auto-distilled", f"#{self._detect_task_type(user_prompt)}"]
+            await self.client.end_task(
+                task=user_prompt,
+                outcome=insight["text"],
+                tags=[f"#{self._detect_task_type(user_prompt)}"],
+                category=insight["category"],
             )
             
         logger.info("[UAMS Middleware] Knowledge successfully synchronized to the Unified Memory System.")
