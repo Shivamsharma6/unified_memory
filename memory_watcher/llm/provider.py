@@ -40,10 +40,30 @@ MODEL_ROLES = {
 }
 
 
+import os
+
 def get_llm_config(role: str = "distillation", **overrides) -> LLMConfig:
-    """Get LLMConfig for a specific role. Override any field."""
+    """Get LLMConfig for a specific role. Override any field using kwargs or env vars."""
     model = MODEL_ROLES.get(role, MODEL_ROLES["distillation"])
-    return LLMConfig(model=model, **overrides)
+    
+    provider = os.getenv("UAMS_LLM_PROVIDER", "ollama")
+    env_model = os.getenv("UAMS_LLM_MODEL")
+    if env_model:
+        model = env_model
+        
+    base_url = os.getenv("UAMS_LLM_BASE_URL", "http://localhost:11434")
+    api_key = os.getenv("UAMS_LLM_API_KEY")
+    
+    config_args = {
+        "provider": provider,
+        "model": model,
+        "base_url": base_url,
+    }
+    if api_key:
+        config_args["api_key"] = api_key
+        
+    config_args.update(overrides)
+    return LLMConfig(**config_args)
 
 
 class LLMProvider:

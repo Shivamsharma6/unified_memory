@@ -11,6 +11,7 @@ Defines the 7 memory categories that structure all stored experiences:
   relationship  - person-specific dynamics
 """
 
+import os
 from enum import Enum
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
@@ -32,7 +33,8 @@ class MemoryTypeConfig(BaseModel):
     name: MemoryCategory
     description: str
     collection_name: str
-    vector_size: int = 1024
+    vector_size: int = Field(default_factory=lambda: int(os.getenv("UAMS_EMBED_DIMENSION", "1024")))
+    distance: str = "Cosine"
     enabled: bool = True
     retention_policy: str = "indefinite"  # indefinite, rolling, archival
     min_importance_threshold: float = 0.0  # 0.0–1.0, below this gets pruned

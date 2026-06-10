@@ -5,19 +5,22 @@ from typing import List, Optional
 from tenacity import retry, wait_exponential, stop_after_attempt
 from models.document import Document
 from embeddings.cache import EmbeddingCache
-from ollama import AsyncClient as OllamaClient
+import os
+import httpx
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
 class EmbeddingGenerator:
-    def __init__(self, provider: str = "ollama", model_name: str = "mxbai-embed-large:335m"):
+    def __init__(self, provider: str = None, model_name: str = None):
         """
         provider: "fastembed" or "ollama"
         model_name: e.g. "nomic-ai/nomic-embed-text-v1.5", "BAAI/bge-m3" (for fastembed)
                     or "nomic-embed-text", "bge-m3" (for ollama)
         """
-        self.provider = provider
-        self.model_name = model_name
+        self.provider = provider or os.getenv("UAMS_EMBED_PROVIDER", "ollama")
+        self.model_name = model_name or os.getenv("UAMS_EMBED_MODEL", "mxbai-embed-large:335m")
+        self.api_key = os.getenv("UAMS_EMBED_API_KEY")
         self.cache = EmbeddingCache()
         self._fastembed_model = None
         self.ollama_client = None
@@ -33,7 +36,11 @@ class EmbeddingGenerator:
             # Fastembed automatically leverages Apple Silicon (MPS/CoreML) via ONNX Runtime if available
             self._fastembed_model = TextEmbedding(model_name=self.model_name)
         elif self.provider == "ollama":
+            from ollama import AsyncClient as OllamaClient
             self.ollama_client = OllamaClient()
+        elif self.provider == "openai":
+            if not self.api_key:
+                raise ValueError("UAMS_EMBED_API_KEY is required for OpenAI embeddings")
         elif self.provider == "fake":
             pass
         else:
@@ -47,6 +54,19 @@ class EmbeddingGenerator:
             response = await self.ollama_client.embeddings(model=self.model_name, prompt=text)
             return response['embedding']
         return await asyncio.gather(*(_embed_single(t) for t in texts))
+
+    @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
+    async def _generate_openai(self, texts: List[str]) -> List[List[float]]:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.openai.com/v1/embeddings",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                json={"input": texts, "model": self.model_name}
+            )
+            response.raise_for_status()
+            data = response.json()
+            # OpenAI returns results in order
+            return [item['embedding'] for item in data['data']]
 
     @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
     async def _generate_fastembed(self, texts: List[str]) -> List[List[float]]:
@@ -88,6 +108,8 @@ class EmbeddingGenerator:
         
         if self.provider == "fastembed":
             new_embeddings = await self._generate_fastembed(texts_to_embed)
+        elif self.provider == "openai":
+            new_embeddings = await self._generate_openai(texts_to_embed)
         elif self.provider == "fake":
             new_embeddings = await self._generate_fake(texts_to_embed)
         else:

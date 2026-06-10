@@ -11,7 +11,7 @@ The goal is simple: when an agent fixes bug A today, every agent can retrieve wh
 - **Hybrid retrieval:** Agents query one API that combines semantic search, entity extraction, graph expansion, reranking, and context compression.
 - **Bug-fix recall:** Procedural memories and task notes make searches smaller and more accurate because past fixes become durable project knowledge.
 - **Agent SDK:** Python SDK and middleware for automatic pre-task memory injection and post-task memory distillation.
-- **One-command local setup:** `./install.sh` creates the Python environment, installs the watcher/API dependencies, and installs the SDK.
+- **One-command setup:** Cross-platform scripts (`Makefile`, `install.bat`) create the Python environment and install dependencies.
 
 ## SOTA Intelligence Features
 
@@ -19,10 +19,11 @@ UAMS goes beyond basic RAG with production-grade intelligence layers:
 
 ### LLM-Powered Distillation
 Memory summarization and lesson extraction use real LLM calls (Ollama/OpenAI) instead of keyword heuristics. Configure via environment variables:
-- `UAMS_LLM_PROVIDER` — `ollama` (default), `openai`, or `mock`
-- `UAMS_LLM_MODEL` — main model name (default: `gemma4:12b-mlx`)
+- `UAMS_LLM_PROVIDER` — `ollama` (default), `openai` (for cloud), or `mock`
+- `UAMS_LLM_MODEL` — main model name (default: `gemma4:12b-mlx`, or `gpt-4o`)
 - `UAMS_LLM_BASE_URL` — LLM endpoint (default: `http://localhost:11434`)
 - `UAMS_LLM_API_KEY` — API key for OpenAI-compatible providers
+- `UAMS_EMBED_PROVIDER` — `ollama`, `openai`, or `fastembed`
 - `UAMS_DISTILL_INTERVAL` — memory distillation frequency in file changes (default: `10`)
 
 **Model Roles & Defaults:**
@@ -76,20 +77,24 @@ Requirements:
 
 - Python 3.11+
 - Docker or OrbStack for Qdrant
-- macOS or Linux
+- macOS, Linux, or Windows
 
 Install:
 
 ```bash
 git clone https://github.com/Shivamsharma6/unified_memory.git
 cd unified_memory
-./install.sh
+make install      # Mac/Linux
+# or
+install.bat       # Windows
 ```
 
 Start everything:
 
 ```bash
-./uams start
+make start        # Mac/Linux
+# or
+uams.bat start    # Windows
 ```
 
 Open the API docs:
@@ -184,7 +189,7 @@ The UAMS MCP server is configured in `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.uams]
-command = "/Users/shivamsharma/projects/unified_memory/uams"
+command = "/path/to/unified_memory/uams"
 args = ["mcp"]
 env = {UAMS_API_URL = "http://localhost:8000"}
 ```
