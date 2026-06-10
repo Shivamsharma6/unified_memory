@@ -26,7 +26,7 @@ class LLMConfig:
     api_key: Optional[str] = None
     temperature: float = 0.3
     max_tokens: int = 4096
-    timeout: float = 60.0
+    timeout: float = 300.0  # 5 min — thinking models need time to load + reason
     idle_timeout: float = 300.0  # seconds before client is closed
 
 
