@@ -32,7 +32,7 @@ class MemoryTypeConfig(BaseModel):
     name: MemoryCategory
     description: str
     collection_name: str
-    vector_size: int = 384
+    vector_size: int = 1024
     enabled: bool = True
     retention_policy: str = "indefinite"  # indefinite, rolling, archival
     min_importance_threshold: float = 0.0  # 0.0–1.0, below this gets pruned
