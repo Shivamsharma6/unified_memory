@@ -7,6 +7,7 @@ from api.models import SearchRequest, SearchResult, SearchResponse
 from storage.qdrant_store import QdrantStore
 from embeddings.generator import EmbeddingGenerator
 from api.retrieval.compressor import ContextCompressor
+from api.retrieval.reranker import CrossEncoderReranker
 from graph.store import KnowledgeGraphStore
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,7 @@ class RetrievalPipeline:
         self.embedder = EmbeddingGenerator()
         self.compressor = ContextCompressor(sim_threshold=0.85)
         self.kg_store = KnowledgeGraphStore()
+        self.reranker = CrossEncoderReranker()
         self.entity_pattern = re.compile(r'\[\[(.*?)\]\]')
         # Fallback regex for Capitalized entities if wikilinks aren't used in prompt
         self.fallback_entity_pattern = re.compile(r'\b[A-Z][a-zA-Z0-9]+\b')
@@ -109,8 +111,8 @@ class RetrievalPipeline:
 
         return results
 
-    async def _step6_rerank(self, results: List[Any], query_entities: List[str]) -> List[SearchResult]:
-        """Graph-Aware Reranking using Knowledge Graph edges."""
+    async def _step6_rerank(self, results: List[Any], query_entities: List[str], query: str = "") -> List[SearchResult]:
+        """Graph-Aware Reranking using Knowledge Graph edges, enhanced with cross-encoder scoring."""
         ranked = []
         for r in results:
             # Handle both actual Qdrant objects and mocked dicts (for tests)
@@ -162,6 +164,11 @@ class RetrievalPipeline:
                 source_file=payload.get("source_file", "unknown"),
                 entities=result_entities
             ))
+
+        # Cross-encoder reranking pass
+        if query:
+            ranked = await self.reranker.rerank(query, ranked)
+
         return ranked
 
     async def _step7_context_compression(self, ranked: List[SearchResult], compress: bool, request: SearchRequest) -> List[SearchResult]:
@@ -184,7 +191,7 @@ class RetrievalPipeline:
         raw_results = await self._step5_vector_retrieval(norm_query, expanded_entities, intent, request.limit)
         
         # Graph-Aware Rerank
-        ranked_results = await self._step6_rerank(raw_results, all_query_entities)
+        ranked_results = await self._step6_rerank(raw_results, all_query_entities, query=norm_query)
         ranked_results.sort(key=lambda r: (r.importance, r.score), reverse=True)
         ranked_results = ranked_results[: max(request.limit, 0)]
         
