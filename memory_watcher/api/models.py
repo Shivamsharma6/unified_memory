@@ -32,7 +32,7 @@ class RememberRequest(BaseModel):
 
 class SummarizeRequest(BaseModel):
     topic: str
-    max_tokens: int = 500
+    max_tokens: int = 2048
 
 class ContextRequest(BaseModel):
     task: str

@@ -17,7 +17,7 @@ class LLMConfig:
     base_url: str = "http://localhost:11434"
     api_key: Optional[str] = None
     temperature: float = 0.3
-    max_tokens: int = 2048
+    max_tokens: int = 4096
     timeout: float = 60.0
 
 
@@ -78,7 +78,12 @@ class LLMProvider:
                 },
             )
             resp.raise_for_status()
-            return resp.json()["message"]["content"]
+            data = resp.json()
+            content = data.get("message", {}).get("content", "")
+            # Thinking models (gemma4, qwen3, etc.) put output in "thinking" field
+            if not content:
+                content = data.get("message", {}).get("thinking", "")
+            return content
 
         elif self.config.provider == "openai":
             resp = await client.post(
