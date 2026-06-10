@@ -30,6 +30,22 @@ class LLMConfig:
     idle_timeout: float = 300.0  # seconds before client is closed
 
 
+# Model roles — each task gets the right model
+MODEL_ROLES = {
+    "distillation": "gemma4:12b-mlx",     # Deep reasoning for summarization
+    "reflection": "gemma4:12b-mlx",       # Self-assessment, memory review
+    "fallback": "glm-4.7-flash:latest",   # Fast, cheap, always available
+    "embedding": "mxbai-embed-large:335m", # 1024-dim, high quality
+    "reranking": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+}
+
+
+def get_llm_config(role: str = "distillation", **overrides) -> LLMConfig:
+    """Get LLMConfig for a specific role. Override any field."""
+    model = MODEL_ROLES.get(role, MODEL_ROLES["distillation"])
+    return LLMConfig(model=model, **overrides)
+
+
 class LLMProvider:
     """
     Unified LLM provider with lazy client creation and idle shutdown.

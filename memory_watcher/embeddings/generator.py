@@ -10,7 +10,7 @@ from ollama import AsyncClient as OllamaClient
 logger = logging.getLogger(__name__)
 
 class EmbeddingGenerator:
-    def __init__(self, provider: str = "fastembed", model_name: str = "BAAI/bge-small-en-v1.5"):
+    def __init__(self, provider: str = "ollama", model_name: str = "mxbai-embed-large:335m"):
         """
         provider: "fastembed" or "ollama"
         model_name: e.g. "nomic-ai/nomic-embed-text-v1.5", "BAAI/bge-m3" (for fastembed)

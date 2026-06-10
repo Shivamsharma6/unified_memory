@@ -10,7 +10,7 @@ from api.models import SearchRequest, SearchResponse, RememberRequest, Summarize
 from api.memory_writer import write_memory
 from api.procedure_reader import get_relevant_procedures
 from api.retrieval.pipeline import RetrievalPipeline
-from llm.provider import LLMProvider, LLMConfig
+from llm.provider import LLMProvider, LLMConfig, MODEL_ROLES, get_llm_config
 from pipelines.ingestion import IngestionPipeline
 from identity.store import IdentityStore
 
@@ -177,7 +177,9 @@ async def health_check():
         "model": pipeline.embedder.model_name,
     }
 
-    status = "healthy" if all(c["status"] == "ok" for c in components.values()) else "degraded"
+    components["models"] = MODEL_ROLES
+
+    status = "healthy" if all(c.get("status") == "ok" for k, c in components.items() if k not in ("models",)) else "degraded"
     return {"status": status, "components": components}
 
 @app.get("/llm-status", tags=["System"])
@@ -196,3 +198,26 @@ async def llm_status():
         "idle_timeout": provider.config.idle_timeout,
         "shutdown_in": round(max(0, provider.config.idle_timeout - idle_since), 1) if idle_since else None,
     }
+
+@app.post("/reflect", tags=["Intelligence"])
+async def reflect():
+    """Reflect on recent memories — quality assessment, gaps, suggestions."""
+    from intelligence.reflection import MemoryReflector
+    reflector = MemoryReflector()
+    try:
+        # Gather recent memories from the vault
+        vault_path = Path(os.getenv("UAMS_VAULT_PATH", str(Path(__file__).resolve().parents[2])))
+        daily_dir = vault_path / "Daily"
+        memories = []
+        if daily_dir.exists():
+            for f in sorted(daily_dir.glob("*.md"), reverse=True)[:5]:
+                try:
+                    content = f.read_text(encoding="utf-8")
+                    memories.append({"content": content, "source_file": f.name})
+                except Exception:
+                    pass
+
+        result = await reflector.reflect(memories)
+        return result
+    finally:
+        await reflector.shutdown()
