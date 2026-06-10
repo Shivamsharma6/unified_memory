@@ -9,7 +9,7 @@ from models.document import Document, Chunk
 logger = logging.getLogger(__name__)
 
 class QdrantStore:
-    def __init__(self, host: str = "localhost", port: int = 6333, vector_size: int = 384):
+    def __init__(self, host: str = "localhost", port: int = 6333, vector_size: int = 1024):
         # Native integration using AsyncQdrantClient
         self.client = AsyncQdrantClient(host=host, port=port)
         self.vector_size = vector_size

@@ -193,3 +193,8 @@ class MemoryDistiller:
                 fm["lifecycle"] = "distilled"
                 fm["distilled_to"] = f"[[{proc_path.stem}]]"
                 self._write_file(file, fm, content)
+
+    async def shutdown(self):
+        if self._llm is not None:
+            await self._llm.shutdown()
+            self._llm = None

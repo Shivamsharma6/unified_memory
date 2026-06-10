@@ -1,10 +1,12 @@
 import asyncio
 import logging
 import time
+import os
 from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from pipelines.ingestion import IngestionPipeline
+from intelligence.distiller import MemoryDistiller
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,10 @@ class MemoryWatcher:
         self.queue = asyncio.Queue()
         self.pending = {}
         self.debounce_seconds = 2.0
+        self._files_since_distill = 0
+        self._distill_interval = int(os.getenv("UAMS_DISTILL_INTERVAL", "10"))  # files between distill cycles
+        vault_path = str(Path(target_dir))
+        self._distiller = MemoryDistiller(vault_path=vault_path)
 
     async def _process_queue(self):
         while True:
@@ -59,6 +65,16 @@ class MemoryWatcher:
                 for path in to_process:
                     # Create a task so processing doesn't block debouncer
                     asyncio.create_task(self.pipeline.process_file(path))
+                    self._files_since_distill += 1
+
+                # Trigger distillation after N files processed
+                if self._files_since_distill >= self._distill_interval:
+                    self._files_since_distill = 0
+                    logger.info(f"Distill cycle triggered after {self._distill_interval} files")
+                    try:
+                        await self._distiller.distill_cycle()
+                    except Exception as e:
+                        logger.error(f"Distill cycle failed: {e}")
             except asyncio.CancelledError:
                 break
 
@@ -83,3 +99,4 @@ class MemoryWatcher:
             observer.join()
             queue_task.cancel()
             worker_task.cancel()
+            await self._distiller.shutdown()

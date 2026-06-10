@@ -47,3 +47,25 @@ async def test_llm_provider_batch():
         "Extract lessons from C",
     ])
     assert len(results) == 3
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_idle_shutdown():
+    """Verify client shuts down after idle_timeout."""
+    config = LLMConfig(provider="mock", idle_timeout=1.0)
+    provider = LLMProvider(config)
+    result = await provider.generate("hello")
+    assert result is not None
+    assert provider.config.idle_timeout == 1.0
+    await provider.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_model_roles():
+    from llm.provider import MODEL_ROLES, get_llm_config
+    assert "distillation" in MODEL_ROLES
+    assert "reflection" in MODEL_ROLES
+    assert "fallback" in MODEL_ROLES
+    assert "embedding" in MODEL_ROLES
+    config = get_llm_config("reflection")
+    assert config.model == "gemma4:12b-mlx"
