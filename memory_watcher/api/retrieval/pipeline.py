@@ -45,6 +45,23 @@ class RetrievalPipeline:
         except Exception:
             logger.warning("Identity store unavailable for retrieval boosts")
 
+    def _temporal_boost(self, date_str: str) -> float:
+        """Calculate recency boost from a date string. Recent = higher boost."""
+        if not date_str:
+            return 0.0
+        try:
+            from datetime import datetime, timezone
+            if isinstance(date_str, str):
+                dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            else:
+                dt = date_str
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            days_ago = (datetime.now(timezone.utc) - dt).days
+            return max(0.0, 2 ** (-days_ago / 30.0))
+        except (ValueError, TypeError):
+            return 0.0
+
     async def _step1_understand_query(self, query: str) -> str:
         return query.strip()
 
@@ -171,8 +188,12 @@ class RetrievalPipeline:
                         identity_boost = sum(boosts.values()) * 0.1
                 except Exception:
                     pass
-            
-            final_importance = base_importance + graph_boost + identity_boost
+
+            # Temporal boost
+            date_str = payload.get("date", "")
+            temporal = self._temporal_boost(date_str)
+
+            final_importance = base_importance + graph_boost + identity_boost + temporal
             
             ranked.append(SearchResult(
                 chunk_id=str(r_id),
