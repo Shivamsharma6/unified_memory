@@ -27,16 +27,31 @@ app.include_router(memory_edit_router)
 pipeline = RetrievalPipeline()
 ingestion_pipeline = IngestionPipeline()
 identity_store = IdentityStore(os.getenv("UAMS_VAULT_PATH", str(Path(__file__).resolve().parents[2])))
-llm = LLMProvider(LLMConfig(
-    provider=os.getenv("UAMS_LLM_PROVIDER", "ollama"),
-    model=os.getenv("UAMS_LLM_MODEL", "gemma4:12b-mlx"),
-    base_url=os.getenv("UAMS_LLM_BASE_URL", "http://localhost:11434"),
-    api_key=os.getenv("UAMS_LLM_API_KEY"),
-))
+
+# LLM: lazy singleton — created on first call, auto-shuts down after idle
+_llm: LLMProvider | None = None
+
+def _get_llm() -> LLMProvider:
+    global _llm
+    if _llm is None:
+        _llm = LLMProvider(LLMConfig(
+            provider=os.getenv("UAMS_LLM_PROVIDER", "ollama"),
+            model=os.getenv("UAMS_LLM_MODEL", "gemma4:12b-mlx"),
+            base_url=os.getenv("UAMS_LLM_BASE_URL", "http://localhost:11434"),
+            api_key=os.getenv("UAMS_LLM_API_KEY"),
+        ))
+    return _llm
 
 @app.on_event("startup")
 async def startup_event():
     await pipeline.initialize()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    global _llm
+    if _llm is not None:
+        await _llm.shutdown()
+        _llm = None
 
 @app.post("/search", response_model=SearchResponse, tags=["Retrieval"])
 async def search_memory(request: SearchRequest):
@@ -82,7 +97,7 @@ async def summarize(request: SummarizeRequest):
                 "decisions. Do not hallucinate information not present in the context."
             )
             prompt = f"Topic: {request.topic}\n\nRetrieved Context:\n{context_text[:4000]}\n\nGenerate a concise summary:"
-            summary = await llm.generate(prompt, system=system, max_tokens=request.max_tokens)
+            summary = await _get_llm().generate(prompt, system=system, max_tokens=request.max_tokens)
             return {"topic": request.topic, "summary": summary, "sources": [r.source_file for r in res.results]}
         return {"topic": request.topic, "summary": f"No relevant context found for '{request.topic}'.", "sources": []}
     except Exception as e:

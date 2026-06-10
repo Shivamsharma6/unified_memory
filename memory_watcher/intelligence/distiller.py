@@ -37,11 +37,18 @@ class MemoryDistiller:
         self.concepts_dir = self.vault_path / "Concepts"
         self.procedures_dir = self.vault_path / "Tasks"
         self.archive_dir = self.vault_path / "Archive"
-        self.llm = LLMProvider(llm_config)
+        self._llm_config = llm_config
+        self._llm: Optional[LLMProvider] = None
 
         # Ensure dirs exist
         for d in [self.daily_dir, self.concepts_dir, self.procedures_dir, self.archive_dir]:
             d.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def llm(self) -> LLMProvider:
+        if self._llm is None:
+            self._llm = LLMProvider(self._llm_config)
+        return self._llm
 
     def _parse_file(self, filepath: Path) -> Dict[str, Any]:
         """Parse frontmatter and content."""

@@ -1,10 +1,18 @@
 """
 Configurable LLM Provider for UAMS intelligence layer.
+
+Lifecycle:
+  - Client is created lazily on first generate() call
+  - Client is closed after idle_timeout seconds of inactivity
+  - Next call recreates the client
+  - shutdown() forces immediate cleanup
 """
 
+import asyncio
 import json
 import logging
-from dataclasses import dataclass, field
+import time
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -19,34 +27,80 @@ class LLMConfig:
     temperature: float = 0.3
     max_tokens: int = 4096
     timeout: float = 60.0
+    idle_timeout: float = 300.0  # seconds before client is closed
 
 
 class LLMProvider:
-    """Unified LLM provider with fallback to mock for testing."""
+    """
+    Unified LLM provider with lazy client creation and idle shutdown.
+
+    The httpx client is only alive while actively processing requests.
+    After idle_timeout seconds of no activity, the client is closed and
+    memory is released. The next call recreates it.
+    """
 
     def __init__(self, config: Optional[LLMConfig] = None):
         self.config = config or LLMConfig()
         self._client = None
+        self._last_activity: float = 0.0
+        self._idle_task: Optional[asyncio.Task] = None
+        self._lock = asyncio.Lock()
 
     async def _get_client(self):
         if self._client is not None:
+            self._last_activity = time.monotonic()
             return self._client
 
-        if self.config.provider == "ollama":
-            import httpx
-            self._client = httpx.AsyncClient(
-                base_url=self.config.base_url,
-                timeout=self.config.timeout,
-            )
-        elif self.config.provider == "openai":
-            import httpx
-            self._client = httpx.AsyncClient(
-                base_url="https://api.openai.com/v1",
-                headers={"Authorization": f"Bearer {self.config.api_key}"},
-                timeout=self.config.timeout,
-            )
+        async with self._lock:
+            # Double-check after acquiring lock
+            if self._client is not None:
+                self._last_activity = time.monotonic()
+                return self._client
 
-        return self._client
+            if self.config.provider == "ollama":
+                import httpx
+                self._client = httpx.AsyncClient(
+                    base_url=self.config.base_url,
+                    timeout=self.config.timeout,
+                )
+            elif self.config.provider == "openai":
+                import httpx
+                self._client = httpx.AsyncClient(
+                    base_url="https://api.openai.com/v1",
+                    headers={"Authorization": f"Bearer {self.config.api_key}"},
+                    timeout=self.config.timeout,
+                )
+
+            self._last_activity = time.monotonic()
+            self._start_idle_watcher()
+            logger.info(f"LLM client created (provider={self.config.provider}, model={self.config.model})")
+            return self._client
+
+    def _start_idle_watcher(self):
+        if self._idle_task and not self._idle_task.done():
+            return
+        self._idle_task = asyncio.create_task(self._idle_loop())
+
+    async def _idle_loop(self):
+        while True:
+            await asyncio.sleep(30)  # Check every 30s
+            if self._client is None:
+                return
+            idle_for = time.monotonic() - self._last_activity
+            if idle_for >= self.config.idle_timeout:
+                await self.shutdown()
+                logger.info(f"LLM client closed after {idle_for:.0f}s idle")
+                return
+
+    async def shutdown(self):
+        """Close the httpx client and release memory."""
+        if self._client is not None:
+            try:
+                await self._client.aclose()
+            except Exception:
+                pass
+            self._client = None
+            logger.debug("LLM client closed")
 
     async def generate(
         self,
