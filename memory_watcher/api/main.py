@@ -179,3 +179,20 @@ async def health_check():
 
     status = "healthy" if all(c["status"] == "ok" for c in components.values()) else "degraded"
     return {"status": status, "components": components}
+
+@app.get("/llm-status", tags=["System"])
+async def llm_status():
+    """Check LLM provider state — client alive, idle timer, config."""
+    import time
+    provider = _llm
+    if provider is None:
+        return {"loaded": False, "reason": "never called"}
+    idle_since = time.monotonic() - provider._last_activity if provider._last_activity else None
+    return {
+        "loaded": provider._client is not None,
+        "provider": provider.config.provider,
+        "model": provider.config.model,
+        "idle_seconds": round(idle_since, 1) if idle_since else None,
+        "idle_timeout": provider.config.idle_timeout,
+        "shutdown_in": round(max(0, provider.config.idle_timeout - idle_since), 1) if idle_since else None,
+    }
