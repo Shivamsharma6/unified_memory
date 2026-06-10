@@ -20,9 +20,16 @@ UAMS goes beyond basic RAG with production-grade intelligence layers:
 ### LLM-Powered Distillation
 Memory summarization and lesson extraction use real LLM calls (Ollama/OpenAI) instead of keyword heuristics. Configure via environment variables:
 - `UAMS_LLM_PROVIDER` — `ollama` (default), `openai`, or `mock`
-- `UAMS_LLM_MODEL` — model name (default: `gemma4:12b-mlx`)
+- `UAMS_LLM_MODEL` — main model name (default: `gemma4:12b-mlx`)
 - `UAMS_LLM_BASE_URL` — LLM endpoint (default: `http://localhost:11434`)
 - `UAMS_LLM_API_KEY` — API key for OpenAI-compatible providers
+- `UAMS_DISTILL_INTERVAL` — memory distillation frequency in file changes (default: `10`)
+
+**Model Roles & Defaults:**
+- **Embedding:** `mxbai-embed-large:335m` (1024-dim, high quality)
+- **Reflection:** `gemma4:12b-mlx` (self-assessment and memory review via `/reflect`)
+- **Fallback:** `glm-4.7-flash:latest` (fast, cheap, highly available)
+- **Idle Timeout:** `300s` (optimizes memory lifecycle for large models)
 
 ### Cross-Encoder Neural Reranking
 Retrieval results are reranked using `cross-encoder/ms-marco-MiniLM-L-6-v2` for more accurate relevance scoring. Falls back to heuristic word overlap if `sentence-transformers` is not installed.

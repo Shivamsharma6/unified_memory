@@ -42,9 +42,11 @@ class EmbeddingGenerator:
 
     @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
     async def _generate_ollama(self, texts: List[str]) -> List[List[float]]:
-        # Ollama 'embed' API handles batching natively
-        response = await self.ollama_client.embed(model=self.model_name, input=texts)
-        return response['embeddings']
+        # Generate embeddings concurrently for each text chunk
+        async def _embed_single(text: str) -> List[float]:
+            response = await self.ollama_client.embeddings(model=self.model_name, prompt=text)
+            return response['embedding']
+        return await asyncio.gather(*(_embed_single(t) for t in texts))
 
     @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
     async def _generate_fastembed(self, texts: List[str]) -> List[List[float]]:
