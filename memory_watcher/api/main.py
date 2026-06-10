@@ -3,6 +3,7 @@ from pathlib import Path
 
 from api.routers.graph import router as graph_router
 from api.routers.identity import router as identity_router
+from api.routers.quality import router as quality_router
 from fastapi import FastAPI, HTTPException
 from api.models import SearchRequest, SearchResponse, RememberRequest, SummarizeRequest, ContextRequest, ProcedureRequest
 from api.memory_writer import write_memory
@@ -19,6 +20,7 @@ app = FastAPI(
 )
 app.include_router(graph_router)
 app.include_router(identity_router)
+app.include_router(quality_router)
 
 pipeline = RetrievalPipeline()
 ingestion_pipeline = IngestionPipeline()
