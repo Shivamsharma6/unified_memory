@@ -13,6 +13,35 @@ The goal is simple: when an agent fixes bug A today, every agent can retrieve wh
 - **Agent SDK:** Python SDK and middleware for automatic pre-task memory injection and post-task memory distillation.
 - **One-command local setup:** `./install.sh` creates the Python environment, installs the watcher/API dependencies, and installs the SDK.
 
+## SOTA Intelligence Features
+
+UAMS goes beyond basic RAG with production-grade intelligence layers:
+
+### LLM-Powered Distillation
+Memory summarization and lesson extraction use real LLM calls (Ollama/OpenAI) instead of keyword heuristics. Configure via environment variables:
+- `UAMS_LLM_PROVIDER` — `ollama` (default), `openai`, or `mock`
+- `UAMS_LLM_MODEL` — model name (default: `llama3.2`)
+- `UAMS_LLM_BASE_URL` — LLM endpoint (default: `http://localhost:11434`)
+- `UAMS_LLM_API_KEY` — API key for OpenAI-compatible providers
+
+### Cross-Encoder Neural Reranking
+Retrieval results are reranked using `cross-encoder/ms-marco-MiniLM-L-6-v2` for more accurate relevance scoring. Falls back to heuristic word overlap if `sentence-transformers` is not installed.
+
+### Identity Kernel
+A 12-domain identity system that extracts traits from episodic memories, tracks stability over time, detects contradictions, and injects personalized context into agent reasoning. Agents become consistent personalities, not stateless tools.
+
+### Memory Quality Scoring
+Every memory note is scored on frontmatter completeness, link density, structural quality, and content length. Use `/memory/quality` to audit your vault.
+
+### Self-Editing Memory
+Agents can correct, update, or delete their own memories via `/memory/edit`, `/memory/delete`, and `/memory/add-link` — with full audit trail in `Logs/memory_edits.md`.
+
+### Temporal Awareness
+Recent memories are automatically boosted in retrieval to prevent stale context from dominating. Exponential decay ensures today's work surfaces first.
+
+### Semantic Procedure Matching
+Procedures are matched by embedding similarity, not just keyword overlap. The system tries neural reranking and falls back to keyword scoring.
+
 ## Architecture
 
 ```text
