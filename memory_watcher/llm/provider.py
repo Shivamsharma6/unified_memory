@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class LLMConfig:
     provider: str = "ollama"
-    model: str = "llama3.2"
+    model: str = "gemma4:12b-mlx"
     base_url: str = "http://localhost:11434"
     api_key: Optional[str] = None
     temperature: float = 0.3

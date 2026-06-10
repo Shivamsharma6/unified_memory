@@ -29,7 +29,7 @@ ingestion_pipeline = IngestionPipeline()
 identity_store = IdentityStore(os.getenv("UAMS_VAULT_PATH", str(Path(__file__).resolve().parents[2])))
 llm = LLMProvider(LLMConfig(
     provider=os.getenv("UAMS_LLM_PROVIDER", "ollama"),
-    model=os.getenv("UAMS_LLM_MODEL", "llama3.2"),
+    model=os.getenv("UAMS_LLM_MODEL", "gemma4:12b-mlx"),
     base_url=os.getenv("UAMS_LLM_BASE_URL", "http://localhost:11434"),
     api_key=os.getenv("UAMS_LLM_API_KEY"),
 ))

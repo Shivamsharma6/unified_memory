@@ -20,7 +20,7 @@ UAMS goes beyond basic RAG with production-grade intelligence layers:
 ### LLM-Powered Distillation
 Memory summarization and lesson extraction use real LLM calls (Ollama/OpenAI) instead of keyword heuristics. Configure via environment variables:
 - `UAMS_LLM_PROVIDER` — `ollama` (default), `openai`, or `mock`
-- `UAMS_LLM_MODEL` — model name (default: `llama3.2`)
+- `UAMS_LLM_MODEL` — model name (default: `gemma4:12b-mlx`)
 - `UAMS_LLM_BASE_URL` — LLM endpoint (default: `http://localhost:11434`)
 - `UAMS_LLM_API_KEY` — API key for OpenAI-compatible providers
 
