@@ -203,6 +203,44 @@ Future agents should search for [[{issue}]], related files, and the listed entit
     }
 
 
+@mcp.tool()
+async def get_identity(entity_id: str = "default") -> dict[str, Any]:
+    """Get the identity profile for an entity (traits, confidence, version)."""
+    return await _client().get_identity(entity_id=entity_id)
+
+
+@mcp.tool()
+async def inject_identity(
+    entity_id: str = "default",
+    query: str = "",
+    task_type: str = "general",
+) -> dict[str, Any]:
+    """Inject identity context into agent reasoning for personalized responses."""
+    return await _client().inject_identity(
+        entity_id=entity_id, query=query, task_type=task_type
+    )
+
+
+@mcp.tool()
+async def extract_identity(
+    entity_id: str = "default",
+    entity_name: str = "Agent",
+    memories: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Extract identity traits from episodic memories."""
+    return await _client().extract_identity(
+        entity_id=entity_id,
+        entity_name=entity_name,
+        memories=memories or [],
+    )
+
+
+@mcp.tool()
+async def memory_quality(path: str) -> dict[str, Any]:
+    """Score a memory note's quality and completeness."""
+    return await _client().memory_quality(path=path)
+
+
 def main() -> None:
     mcp.run()
 

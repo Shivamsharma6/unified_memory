@@ -156,3 +156,28 @@ Future agents should search for [[{task}]], the listed entities, and the listed 
             if getattr(e, 'status_code', None) == 404:
                 return {"error": f"Entity '{entity}' not found in knowledge graph.", "nodes": [], "links": []}
             raise
+
+    async def get_identity(self, entity_id: str = "default") -> Dict[str, Any]:
+        """Get identity profile."""
+        return await self._request("POST", "/identity/profile", {"entity_id": entity_id}, use_cache=True)
+
+    async def inject_identity(
+        self, entity_id: str = "default", query: str = "", task_type: str = "general"
+    ) -> Dict[str, Any]:
+        """Inject identity into reasoning."""
+        return await self._request("POST", "/identity/inject", {
+            "entity_id": entity_id, "query": query, "task_type": task_type
+        }, use_cache=False)
+
+    async def extract_identity(
+        self, entity_id: str = "default", entity_name: str = "Agent",
+        memories: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Extract identity from memories."""
+        return await self._request("POST", "/identity/extract", {
+            "entity_id": entity_id, "entity_name": entity_name, "memories": memories or []
+        }, use_cache=False)
+
+    async def memory_quality(self, path: str) -> Dict[str, Any]:
+        """Score memory quality."""
+        return await self._request("POST", "/memory/quality", {"path": path}, use_cache=True)
