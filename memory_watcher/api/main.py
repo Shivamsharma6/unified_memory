@@ -1,9 +1,13 @@
+import os
+from pathlib import Path
+
 from api.routers.graph import router as graph_router
 from fastapi import FastAPI, HTTPException
 from api.models import SearchRequest, SearchResponse, RememberRequest, SummarizeRequest, ContextRequest, ProcedureRequest
 from api.memory_writer import write_memory
 from api.procedure_reader import get_relevant_procedures
 from api.retrieval.pipeline import RetrievalPipeline
+from llm.provider import LLMProvider, LLMConfig
 from pipelines.ingestion import IngestionPipeline
 
 app = FastAPI(
@@ -15,6 +19,12 @@ app.include_router(graph_router)
 
 pipeline = RetrievalPipeline()
 ingestion_pipeline = IngestionPipeline()
+llm = LLMProvider(LLMConfig(
+    provider=os.getenv("UAMS_LLM_PROVIDER", "ollama"),
+    model=os.getenv("UAMS_LLM_MODEL", "llama3.2"),
+    base_url=os.getenv("UAMS_LLM_BASE_URL", "http://localhost:11434"),
+    api_key=os.getenv("UAMS_LLM_API_KEY"),
+))
 
 @app.on_event("startup")
 async def startup_event():
@@ -52,16 +62,23 @@ async def remember(request: RememberRequest):
 
 @app.post("/summarize", tags=["Compute"])
 async def summarize(request: SummarizeRequest):
-    """Generate a semantic summary for a given topic."""
+    """Generate a semantic summary using LLM-powered distillation."""
     try:
-        search_req = SearchRequest(query=request.topic, limit=3, compress=True)
+        search_req = SearchRequest(query=request.topic, limit=5, compress=True)
         res = await pipeline.search(search_req)
-        if res.results:
-            summary_content = "\n\n".join([f"- {r.text}" for r in res.results])
-            return {"topic": request.topic, "summary": f"Summary of [[{request.topic}]]:\n\n{summary_content}"}
-    except Exception:
-        pass
-    return {"topic": request.topic, "summary": f"Stub summary generation for '{request.topic}'."}
+        context_text = "\n\n".join([f"Source: {r.source_file}\n{r.text}" for r in res.results])
+        if context_text.strip():
+            system = (
+                "You are a memory summarization engine. Given retrieved context about a topic, "
+                "generate a concise, factual summary. Focus on key facts, relationships, and "
+                "decisions. Do not hallucinate information not present in the context."
+            )
+            prompt = f"Topic: {request.topic}\n\nRetrieved Context:\n{context_text[:4000]}\n\nGenerate a concise summary:"
+            summary = await llm.generate(prompt, system=system, max_tokens=request.max_tokens)
+            return {"topic": request.topic, "summary": summary, "sources": [r.source_file for r in res.results]}
+        return {"topic": request.topic, "summary": f"No relevant context found for '{request.topic}'.", "sources": []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/entities", tags=["Graph"])
 async def get_entities():
