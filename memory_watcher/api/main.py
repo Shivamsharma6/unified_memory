@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 from api.routers.graph import router as graph_router
+from api.routers.identity import router as identity_router
 from fastapi import FastAPI, HTTPException
 from api.models import SearchRequest, SearchResponse, RememberRequest, SummarizeRequest, ContextRequest, ProcedureRequest
 from api.memory_writer import write_memory
@@ -9,6 +10,7 @@ from api.procedure_reader import get_relevant_procedures
 from api.retrieval.pipeline import RetrievalPipeline
 from llm.provider import LLMProvider, LLMConfig
 from pipelines.ingestion import IngestionPipeline
+from identity.store import IdentityStore
 
 app = FastAPI(
     title="Unified Agent Memory API",
@@ -16,9 +18,11 @@ app = FastAPI(
     version="1.0.0"
 )
 app.include_router(graph_router)
+app.include_router(identity_router)
 
 pipeline = RetrievalPipeline()
 ingestion_pipeline = IngestionPipeline()
+identity_store = IdentityStore(os.getenv("UAMS_VAULT_PATH", str(Path(__file__).resolve().parents[2])))
 llm = LLMProvider(LLMConfig(
     provider=os.getenv("UAMS_LLM_PROVIDER", "ollama"),
     model=os.getenv("UAMS_LLM_MODEL", "llama3.2"),

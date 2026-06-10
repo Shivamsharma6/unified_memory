@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 import json
 import networkx as nx
@@ -22,6 +23,7 @@ class RetrievalPipeline:
         self.entity_pattern = re.compile(r'\[\[(.*?)\]\]')
         # Fallback regex for Capitalized entities if wikilinks aren't used in prompt
         self.fallback_entity_pattern = re.compile(r'\b[A-Z][a-zA-Z0-9]+\b')
+        self.identity_store = None
 
     async def initialize(self):
         try:
@@ -36,6 +38,12 @@ class RetrievalPipeline:
                 logger.info("Loaded Knowledge Graph for Graph-Aware Retrieval.")
         except Exception as e:
             logger.warning("Starting with empty Knowledge Graph.")
+        
+        try:
+            from identity.store import IdentityStore
+            self.identity_store = IdentityStore(os.getenv("UAMS_VAULT_PATH", "."))
+        except Exception:
+            logger.warning("Identity store unavailable for retrieval boosts")
 
     async def _step1_understand_query(self, query: str) -> str:
         return query.strip()
@@ -154,7 +162,17 @@ class RetrievalPipeline:
                         elif rel in ["depends_on"]: graph_boost += 0.15
                         else: graph_boost += 0.1
 
-            final_importance = base_importance + graph_boost
+            # Identity boost
+            identity_boost = 0.0
+            if self.identity_store and query:
+                try:
+                    boosts = self.identity_store.get_retrieval_boosts("default", query)
+                    if boosts:
+                        identity_boost = sum(boosts.values()) * 0.1
+                except Exception:
+                    pass
+            
+            final_importance = base_importance + graph_boost + identity_boost
             
             ranked.append(SearchResult(
                 chunk_id=str(r_id),
