@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "uams-sdk"
-version = "1.0.0"
+version = "1.0.1"
 description = "Shared Memory SDK for Hermes and OpenClaw targeting the Unified Agent Memory System."
 authors = [{ name = "Shivam Sharma" }]
 requires-python = ">=3.11"
