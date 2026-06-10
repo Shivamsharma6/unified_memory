@@ -15,6 +15,18 @@ dependencies = [
     "mcp[cli]>=1.12.4,<1.13"
 ]
 
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence"
+]
+
+[project.urls]
+Homepage = "https://github.com/Shivamsharma6/unified_memory"
+Repository = "https://github.com/Shivamsharma6/unified_memory.git"
+
 [project.scripts]
 uams-mcp = "uams_sdk.mcp_server:main"
 
