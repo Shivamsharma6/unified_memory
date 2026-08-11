@@ -68,6 +68,15 @@ class StageRevisionResult:
     created: bool
 
 
+@dataclass(frozen=True)
+class OutboxCommand:
+    outbox_id: int
+    command: str
+    memory_id: uuid.UUID
+    revision_id: uuid.UUID | None
+    attempts: int
+
+
 def migration_paths(directory: Path | None = None) -> list[Path]:
     """Return numbered SQL migrations in deterministic version order."""
 
@@ -518,3 +527,254 @@ class PostgresStore:
                     """,
                     (Jsonb({"path": vault_path, "error": str(error)}),),
                 )
+
+    async def claim_vector_outbox(
+        self,
+        worker_id: str,
+        limit: int = 10,
+    ) -> list[OutboxCommand]:
+        async with self.pool.connection() as connection:
+            async with connection.transaction():
+                result = await connection.execute(
+                    """
+                    WITH picked AS (
+                        SELECT outbox_id
+                        FROM vector_outbox
+                        WHERE (status = 'pending' AND available_at <= now())
+                           OR (status = 'processing' AND locked_at < now() - interval '5 minutes')
+                        ORDER BY outbox_id
+                        FOR UPDATE SKIP LOCKED
+                        LIMIT %s
+                    )
+                    UPDATE vector_outbox AS outbox
+                    SET status = 'processing',
+                        attempts = outbox.attempts + 1,
+                        locked_at = now(),
+                        locked_by = %s
+                    FROM picked
+                    WHERE outbox.outbox_id = picked.outbox_id
+                    RETURNING outbox.outbox_id, outbox.command, outbox.memory_id,
+                              outbox.revision_id, outbox.attempts
+                    """,
+                    (limit, worker_id),
+                )
+                rows = await result.fetchall()
+                return [OutboxCommand(**row) for row in rows]
+
+    async def load_revision_chunks(self, revision_id: uuid.UUID) -> list[dict[str, Any]]:
+        async with self.pool.connection() as connection:
+            result = await connection.execute(
+                """
+                SELECT c.chunk_id, c.content, c.heading_path, c.metadata,
+                       d.memory_id, d.memory_type, d.path,
+                       r.revision_id, r.project, r.source_agent, r.frontmatter,
+                       COALESCE((
+                           SELECT array_agg(DISTINCT e.normalized_key)
+                           FROM mentions m
+                           JOIN entities e ON e.entity_id = m.entity_id
+                           WHERE m.revision_id = r.revision_id
+                       ), ARRAY[]::text[]) AS entity_keys
+                FROM chunks c
+                JOIN document_revisions r ON r.revision_id = c.revision_id
+                JOIN documents d ON d.memory_id = r.memory_id
+                WHERE c.revision_id = %s
+                ORDER BY c.ordinal
+                """,
+                (revision_id,),
+            )
+            rows = await result.fetchall()
+            values = []
+            for row in rows:
+                metadata = row["metadata"] or {}
+                frontmatter = row["frontmatter"] or {}
+                values.append(
+                    {
+                        "chunk_id": row["chunk_id"],
+                        "text": row["content"],
+                        "payload": {
+                            "chunk_id": str(row["chunk_id"]),
+                            "memory_id": str(row["memory_id"]),
+                            "revision_id": str(row["revision_id"]),
+                            "memory_type": row["memory_type"],
+                            "project": row["project"],
+                            "source_agent": row["source_agent"],
+                            "source_file": row["path"],
+                            "heading_hierarchy": row["heading_path"],
+                            "tags": metadata.get("tags", []),
+                            "entity_keys": row["entity_keys"],
+                            "timestamps": frontmatter.get("timestamps", {}),
+                            "text": row["content"],
+                        },
+                    }
+                )
+            return values
+
+    async def acknowledge_vector_upsert(
+        self,
+        command: OutboxCommand,
+    ) -> uuid.UUID | None:
+        if command.revision_id is None:
+            raise ValueError("upsert_revision requires a revision_id")
+        async with self.pool.connection() as connection:
+            async with connection.transaction():
+                document_result = await connection.execute(
+                    """
+                    SELECT current_revision_id
+                    FROM documents
+                    WHERE memory_id = %s
+                    FOR UPDATE
+                    """,
+                    (command.memory_id,),
+                )
+                document = await document_result.fetchone()
+                if document is None:
+                    raise RuntimeError(f"Memory {command.memory_id} no longer exists")
+                previous_revision_id = document["current_revision_id"]
+
+                if previous_revision_id and previous_revision_id != command.revision_id:
+                    await connection.execute(
+                        """
+                        UPDATE document_revisions
+                        SET state = 'superseded', superseded_at = now()
+                        WHERE revision_id = %s
+                        """,
+                        (previous_revision_id,),
+                    )
+                    await connection.execute(
+                        """
+                        UPDATE profile_facts
+                        SET status = 'superseded', valid_to = now()
+                        WHERE evidence_revision_id = %s AND status = 'active'
+                        """,
+                        (previous_revision_id,),
+                    )
+
+                await connection.execute(
+                    """
+                    UPDATE document_revisions
+                    SET state = 'active', activated_at = COALESCE(activated_at, now())
+                    WHERE revision_id = %s AND memory_id = %s
+                    """,
+                    (command.revision_id, command.memory_id),
+                )
+                await connection.execute(
+                    """
+                    UPDATE documents
+                    SET current_revision_id = %s, updated_at = now()
+                    WHERE memory_id = %s
+                    """,
+                    (command.revision_id, command.memory_id),
+                )
+                await connection.execute(
+                    """
+                    UPDATE profile_facts
+                    SET status = 'active', valid_from = now()
+                    WHERE evidence_revision_id = %s AND status = 'staged'
+                    """,
+                    (command.revision_id,),
+                )
+                await self._complete_outbox_row(connection, command.outbox_id)
+                await connection.execute(
+                    """
+                    UPDATE ingestion_jobs
+                    SET status = 'succeeded', finished_at = now(), updated_at = now()
+                    WHERE revision_id = %s AND status IN ('pending', 'running', 'retrying')
+                    """,
+                    (command.revision_id,),
+                )
+                if previous_revision_id and previous_revision_id != command.revision_id:
+                    await connection.execute(
+                        """
+                        INSERT INTO vector_outbox (
+                            command, memory_id, revision_id, payload
+                        ) VALUES ('delete_revision', %s, %s, '{}'::jsonb)
+                        ON CONFLICT (command, memory_id, revision_id) DO NOTHING
+                        """,
+                        (command.memory_id, previous_revision_id),
+                    )
+                await connection.execute(
+                    """
+                    INSERT INTO memory_audit_events (
+                        memory_id, revision_id, event_type, details
+                    ) VALUES (%s, %s, 'revision_activated', %s)
+                    """,
+                    (
+                        command.memory_id,
+                        command.revision_id,
+                        Jsonb(
+                            {
+                                "previous_revision_id": (
+                                    str(previous_revision_id) if previous_revision_id else None
+                                )
+                            }
+                        ),
+                    ),
+                )
+                return previous_revision_id
+
+    async def _complete_outbox_row(self, connection, outbox_id: int) -> None:
+        await connection.execute(
+            """
+            UPDATE vector_outbox
+            SET status = 'succeeded', completed_at = now(),
+                locked_at = NULL, locked_by = NULL, last_error = NULL
+            WHERE outbox_id = %s
+            """,
+            (outbox_id,),
+        )
+
+    async def complete_vector_command(self, command: OutboxCommand) -> None:
+        async with self.pool.connection() as connection:
+            async with connection.transaction():
+                await self._complete_outbox_row(connection, command.outbox_id)
+                await connection.execute(
+                    """
+                    INSERT INTO memory_audit_events (
+                        memory_id, revision_id, event_type, details
+                    ) VALUES (%s, %s, 'vector_cleanup_completed', %s)
+                    """,
+                    (
+                        command.memory_id,
+                        command.revision_id,
+                        Jsonb({"command": command.command}),
+                    ),
+                )
+
+    async def fail_vector_command(
+        self,
+        command: OutboxCommand,
+        error: Exception,
+        max_attempts: int = 8,
+    ) -> None:
+        exhausted = command.attempts >= max_attempts
+        delay_seconds = min(2 ** max(command.attempts, 1), 300)
+        async with self.pool.connection() as connection:
+            async with connection.transaction():
+                await connection.execute(
+                    """
+                    UPDATE vector_outbox
+                    SET status = %s,
+                        available_at = now() + (%s * interval '1 second'),
+                        locked_at = NULL,
+                        locked_by = NULL,
+                        last_error = %s
+                    WHERE outbox_id = %s
+                    """,
+                    ("failed" if exhausted else "pending", delay_seconds, str(error), command.outbox_id),
+                )
+                if command.revision_id:
+                    await connection.execute(
+                        """
+                        UPDATE ingestion_jobs
+                        SET status = %s, attempts = %s, error = %s, updated_at = now(),
+                            finished_at = CASE WHEN %s THEN now() ELSE NULL END
+                        WHERE revision_id = %s AND status <> 'succeeded'
+                        """,
+                        (
+                            "failed" if exhausted else "retrying",
+                            command.attempts,
+                            str(error),
+                            exhausted,
+                            command.revision_id,
+                        ),
+                    )

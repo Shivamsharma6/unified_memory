@@ -1,6 +1,7 @@
 import uuid
 import hashlib
 import logging
+import os
 from typing import List, Dict, Any, Optional
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models
@@ -9,10 +10,19 @@ from models.document import Document, Chunk
 logger = logging.getLogger(__name__)
 
 class QdrantStore:
-    def __init__(self, host: str = "localhost", port: int = 6333, vector_size: int = 1024):
+    def __init__(
+        self,
+        host: str = None,
+        port: int = None,
+        vector_size: int = 1024,
+        client=None,
+    ):
         # Native integration using AsyncQdrantClient
-        self.client = AsyncQdrantClient(host=host, port=port)
+        host = host or os.getenv("QDRANT_HOST", "127.0.0.1")
+        port = port or int(os.getenv("QDRANT_HTTP_PORT", "6333"))
+        self.client = client or AsyncQdrantClient(host=host, port=port)
         self.vector_size = vector_size
+        self.v2_collection = "memory_chunks_v2"
         self.collections = [
             "semantic_memory",
             "episodic_memory",
@@ -49,6 +59,91 @@ class QdrantStore:
                     field_name="entities",
                     field_schema=models.PayloadSchemaType.KEYWORD
                 )
+        await self.initialize_v2_collection()
+
+    async def initialize_v2_collection(self):
+        exists = await self.client.collection_exists(self.v2_collection)
+        if not exists:
+            logger.info("Initializing collection: %s", self.v2_collection)
+            await self.client.create_collection(
+                collection_name=self.v2_collection,
+                vectors_config=models.VectorParams(
+                    size=self.vector_size,
+                    distance=models.Distance.COSINE,
+                ),
+            )
+        for field_name in (
+            "memory_id",
+            "revision_id",
+            "memory_type",
+            "project",
+            "source_agent",
+            "entity_keys",
+        ):
+            await self.client.create_payload_index(
+                collection_name=self.v2_collection,
+                field_name=field_name,
+                field_schema=models.PayloadSchemaType.KEYWORD,
+            )
+
+    async def upsert_revision(self, points: List[Dict[str, Any]]) -> None:
+        if not points:
+            return
+        qdrant_points = []
+        for point in points:
+            vector = point["vector"]
+            if len(vector) != self.vector_size:
+                raise ValueError(
+                    f"Embedding dimension {len(vector)} does not match Qdrant size {self.vector_size}"
+                )
+            qdrant_points.append(
+                models.PointStruct(
+                    id=str(point["chunk_id"]),
+                    vector=vector,
+                    payload=point["payload"],
+                )
+            )
+        await self.client.upsert(
+            collection_name=self.v2_collection,
+            points=qdrant_points,
+            wait=True,
+        )
+
+    async def delete_revision(self, memory_id: uuid.UUID, revision_id: uuid.UUID) -> None:
+        await self.client.delete(
+            collection_name=self.v2_collection,
+            points_selector=models.FilterSelector(
+                filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="memory_id",
+                            match=models.MatchValue(value=str(memory_id)),
+                        ),
+                        models.FieldCondition(
+                            key="revision_id",
+                            match=models.MatchValue(value=str(revision_id)),
+                        ),
+                    ]
+                )
+            ),
+            wait=True,
+        )
+
+    async def delete_memory(self, memory_id: uuid.UUID) -> None:
+        await self.client.delete(
+            collection_name=self.v2_collection,
+            points_selector=models.FilterSelector(
+                filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="memory_id",
+                            match=models.MatchValue(value=str(memory_id)),
+                        )
+                    ]
+                )
+            ),
+            wait=True,
+        )
 
     def _determine_collection(self, category: Optional[str]) -> str:
         cat = str(category).lower() if category else ""

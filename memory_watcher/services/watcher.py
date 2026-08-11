@@ -7,6 +7,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from intelligence.distiller import MemoryDistiller
 from pipelines.reconciliation import EXCLUDED_DIRECTORIES, Reconciler
+from pipelines.vector_worker import VectorWorker
 from storage.postgres_store import PostgresStore
 
 logger = logging.getLogger(__name__)
@@ -57,10 +58,11 @@ class MemoryEventHandler(FileSystemEventHandler):
             self._enqueue(event.src_path)
 
 class MemoryWatcher:
-    def __init__(self, target_dir: str, store=None, reconciler=None):
+    def __init__(self, target_dir: str, store=None, reconciler=None, vector_worker=None):
         self.target_dir = target_dir
         self.store = store or PostgresStore()
         self.reconciler = reconciler or Reconciler(target_dir, self.store)
+        self.vector_worker = vector_worker or VectorWorker(self.store)
         self.queue = asyncio.Queue()
         self.pending = {}
         self.retry_counts = {}
@@ -136,6 +138,7 @@ class MemoryWatcher:
     async def start(self):
         await self.store.open()
         await self.store.migrate()
+        await self.vector_worker.initialize()
         startup_result = await self.reconciler.startup_reconcile()
         logger.info(
             "Startup reconciliation: discovered=%s staged=%s unchanged=%s failed=%s deleted=%s",
@@ -156,6 +159,7 @@ class MemoryWatcher:
         queue_task = asyncio.create_task(self._process_queue())
         worker_task = asyncio.create_task(self._debounced_worker())
         periodic_task = asyncio.create_task(self._periodic_reconciliation())
+        vector_task = asyncio.create_task(self.vector_worker.run_forever())
         
         try:
             while True:
@@ -167,6 +171,13 @@ class MemoryWatcher:
             queue_task.cancel()
             worker_task.cancel()
             periodic_task.cancel()
-            await asyncio.gather(queue_task, worker_task, periodic_task, return_exceptions=True)
+            vector_task.cancel()
+            await asyncio.gather(
+                queue_task,
+                worker_task,
+                periodic_task,
+                vector_task,
+                return_exceptions=True,
+            )
             await self._distiller.shutdown()
             await self.store.close()
