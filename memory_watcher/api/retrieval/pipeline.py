@@ -3,6 +3,7 @@ import os
 import re
 import json
 import networkx as nx
+from pathlib import Path
 from typing import List, Dict, Any
 from api.models import SearchRequest, SearchResult, SearchResponse
 from storage.qdrant_store import QdrantStore
@@ -10,13 +11,20 @@ from embeddings.generator import EmbeddingGenerator
 from api.retrieval.compressor import ContextCompressor
 from api.retrieval.reranker import CrossEncoderReranker
 from graph.store import KnowledgeGraphStore
+from storage.postgres_store import PostgresStore
+from api.retrieval.hybrid import HybridRetrieval
+from pipelines.reconciliation import Reconciler
 
 logger = logging.getLogger(__name__)
 
 class RetrievalPipeline:
-    def __init__(self):
-        self.vector_store = QdrantStore()
-        self.embedder = EmbeddingGenerator()
+    def __init__(self, control_store=None, vector_store=None, embedder=None):
+        self.vector_store = vector_store or QdrantStore()
+        self.embedder = embedder or EmbeddingGenerator()
+        self.control_store = control_store or PostgresStore()
+        self.hybrid = None
+        self.reconciler = None
+        self._control_open = False
         self.compressor = ContextCompressor(sim_threshold=0.85)
         self.kg_store = KnowledgeGraphStore()
         self.reranker = CrossEncoderReranker()
@@ -30,6 +38,29 @@ class RetrievalPipeline:
             await self.vector_store.initialize_collections()
         except Exception as e:
             logger.warning("Vector store unavailable during startup: %s", e)
+
+        try:
+            await self.control_store.open()
+            self._control_open = True
+            await self.control_store.migrate()
+            if not await self.control_store.ping():
+                raise RuntimeError("PostgreSQL control plane did not answer its readiness query")
+            self.hybrid = HybridRetrieval(
+                self.control_store,
+                self.vector_store,
+                self.embedder,
+                reranker=self.reranker,
+                compressor=self.compressor,
+            )
+            vault_root = os.getenv(
+                "UAMS_VAULT_PATH",
+                str(Path(__file__).resolve().parents[3]),
+            )
+            self.reconciler = Reconciler(vault_root, self.control_store)
+        except Exception as error:
+            logger.warning("PostgreSQL control plane unavailable; using legacy retrieval: %s", error)
+            self.hybrid = None
+            self.reconciler = None
         
         # Load the graph database / local JSON
         try:
@@ -44,6 +75,11 @@ class RetrievalPipeline:
             self.identity_store = IdentityStore(os.getenv("UAMS_VAULT_PATH", "."))
         except Exception:
             logger.warning("Identity store unavailable for retrieval boosts")
+
+    async def shutdown(self):
+        if self._control_open:
+            await self.control_store.close()
+            self._control_open = False
 
     def _temporal_boost(self, date_str: str) -> float:
         """Calculate recency boost from a date string. Recent = higher boost."""
@@ -248,4 +284,9 @@ class RetrievalPipeline:
         )
 
     async def search(self, request: SearchRequest) -> SearchResponse:
+        if self.hybrid is not None:
+            try:
+                return await self.hybrid.search(request)
+            except Exception as error:
+                logger.warning("Hybrid retrieval failed; using legacy fallback: %s", error)
         return await self._step8_assemble(request)

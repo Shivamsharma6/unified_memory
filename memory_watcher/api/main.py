@@ -52,6 +52,7 @@ async def shutdown_event():
     if _llm is not None:
         await _llm.shutdown()
         _llm = None
+    await pipeline.shutdown()
 
 @app.post("/search", response_model=SearchResponse, tags=["Retrieval"])
 async def search_memory(request: SearchRequest):
@@ -68,9 +69,14 @@ async def remember(request: RememberRequest):
         write_result = write_memory(request)
         path = getattr(write_result, "path", write_result)
         try:
-            await ingestion_pipeline.process_file(str(path))
-            indexed = True
-            warning = None
+            if pipeline.reconciler is not None:
+                reconcile_result = await pipeline.reconciler.reconcile_path(path)
+                indexed = reconcile_result.status in {"staged", "unchanged"}
+                warning = reconcile_result.error
+            else:
+                await ingestion_pipeline.process_file(str(path))
+                indexed = True
+                warning = None
         except Exception as ingest_error:
             indexed = False
             warning = str(ingest_error)

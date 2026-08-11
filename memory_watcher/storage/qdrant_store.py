@@ -145,6 +145,37 @@ class QdrantStore:
             wait=True,
         )
 
+    async def search_v2(
+        self,
+        query_vector: List[float],
+        *,
+        limit: int = 20,
+        memory_types: List[str] | None = None,
+        projects: List[str] | None = None,
+        source_agents: List[str] | None = None,
+    ) -> List[Any]:
+        conditions = []
+        for field_name, values in (
+            ("memory_type", memory_types),
+            ("project", projects),
+            ("source_agent", source_agents),
+        ):
+            if values:
+                conditions.append(
+                    models.FieldCondition(
+                        key=field_name,
+                        match=models.MatchAny(any=list(values)),
+                    )
+                )
+        query_filter = models.Filter(must=conditions) if conditions else None
+        return await self.client.search(
+            collection_name=self.v2_collection,
+            query_vector=query_vector,
+            query_filter=query_filter,
+            limit=limit,
+            with_payload=True,
+        )
+
     def _determine_collection(self, category: Optional[str]) -> str:
         cat = str(category).lower() if category else ""
         if "semantic" in cat: return "semantic_memory"

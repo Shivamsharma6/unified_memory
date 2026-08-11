@@ -778,3 +778,201 @@ class PostgresStore:
                             command.revision_id,
                         ),
                     )
+
+    async def fts_search(
+        self,
+        query: str,
+        *,
+        limit: int = 20,
+        memory_types: list[str] | None = None,
+        projects: list[str] | None = None,
+        source_agents: list[str] | None = None,
+        include_historical: bool = False,
+    ) -> list[dict[str, Any]]:
+        conditions = [
+            "c.search_vector @@ websearch_to_tsquery('english'::regconfig, %s)"
+        ]
+        parameters: list[Any] = [query]
+        if include_historical:
+            conditions.append("r.state IN ('active', 'superseded')")
+        else:
+            conditions.extend(
+                [
+                    "d.status = 'active'",
+                    "d.current_revision_id = c.revision_id",
+                    "r.state = 'active'",
+                ]
+            )
+        for column, values in (
+            ("d.memory_type", memory_types),
+            ("r.project", projects),
+            ("r.source_agent", source_agents),
+        ):
+            if values:
+                conditions.append(f"{column} = ANY(%s)")
+                parameters.append(values)
+        parameters = [query, *parameters, limit]
+        sql = f"""
+            SELECT c.chunk_id, c.content, c.heading_path, c.metadata,
+                   d.memory_id, d.memory_type, d.path,
+                   r.revision_id, r.project, r.source_agent, r.frontmatter,
+                   ts_rank_cd(
+                       c.search_vector,
+                       websearch_to_tsquery('english'::regconfig, %s)
+                   ) AS rank,
+                   COALESCE((
+                       SELECT array_agg(DISTINCT e.normalized_key)
+                       FROM mentions m
+                       JOIN entities e ON e.entity_id = m.entity_id
+                       WHERE m.revision_id = r.revision_id
+                   ), ARRAY[]::text[]) AS entity_keys
+            FROM chunks c
+            JOIN document_revisions r ON r.revision_id = c.revision_id
+            JOIN documents d ON d.memory_id = r.memory_id
+            WHERE {' AND '.join(conditions)}
+            ORDER BY rank DESC, c.ordinal
+            LIMIT %s
+        """
+        async with self.pool.connection() as connection:
+            result = await connection.execute(sql, parameters)
+            rows = await result.fetchall()
+        return [
+            {
+                "id": str(row["chunk_id"]),
+                "rank": float(row["rank"]),
+                "payload": {
+                    "chunk_id": str(row["chunk_id"]),
+                    "memory_id": str(row["memory_id"]),
+                    "revision_id": str(row["revision_id"]),
+                    "memory_type": row["memory_type"],
+                    "project": row["project"],
+                    "source_agent": row["source_agent"],
+                    "source_file": row["path"],
+                    "heading_hierarchy": row["heading_path"],
+                    "tags": (row["metadata"] or {}).get("tags", []),
+                    "entity_keys": row["entity_keys"],
+                    "timestamps": (row["frontmatter"] or {}).get("timestamps", {}),
+                    "text": row["content"],
+                },
+            }
+            for row in rows
+        ]
+
+    async def valid_revision_pairs(
+        self,
+        memory_ids: Iterable[uuid.UUID],
+        *,
+        include_historical: bool = False,
+    ) -> set[tuple[uuid.UUID, uuid.UUID]]:
+        ids = list(memory_ids)
+        if not ids:
+            return set()
+        conditions = ["r.memory_id = ANY(%s)"]
+        if include_historical:
+            conditions.append("r.state IN ('active', 'superseded')")
+        else:
+            conditions.extend(
+                [
+                    "d.status = 'active'",
+                    "d.current_revision_id = r.revision_id",
+                    "r.state = 'active'",
+                ]
+            )
+        async with self.pool.connection() as connection:
+            result = await connection.execute(
+                f"""
+                SELECT r.memory_id, r.revision_id
+                FROM document_revisions r
+                JOIN documents d ON d.memory_id = r.memory_id
+                WHERE {' AND '.join(conditions)}
+                """,
+                (ids,),
+            )
+            rows = await result.fetchall()
+        return {(row["memory_id"], row["revision_id"]) for row in rows}
+
+    async def expand_verified_entities(
+        self,
+        entity_keys: list[str],
+        *,
+        limit: int = 20,
+    ) -> dict[str, float]:
+        if not entity_keys:
+            return {}
+        async with self.pool.connection() as connection:
+            result = await connection.execute(
+                """
+                WITH seed_entities AS (
+                    SELECT entity_id FROM entities WHERE normalized_key = ANY(%s)
+                    UNION
+                    SELECT entity_id FROM entity_aliases WHERE normalized_key = ANY(%s)
+                ), neighbors AS (
+                    SELECT object_entity_id AS entity_id, predicate, confidence
+                    FROM claims
+                    JOIN documents d ON d.memory_id = evidence_memory_id
+                    WHERE subject_entity_id IN (SELECT entity_id FROM seed_entities)
+                      AND claims.status IN ('explicit', 'verified')
+                      AND d.status = 'active'
+                      AND d.current_revision_id = evidence_revision_id
+                    UNION ALL
+                    SELECT subject_entity_id AS entity_id, predicate, confidence
+                    FROM claims
+                    JOIN documents d ON d.memory_id = evidence_memory_id
+                    WHERE object_entity_id IN (SELECT entity_id FROM seed_entities)
+                      AND claims.status IN ('explicit', 'verified')
+                      AND d.status = 'active'
+                      AND d.current_revision_id = evidence_revision_id
+                )
+                SELECT e.normalized_key, neighbors.predicate, max(neighbors.confidence) AS confidence
+                FROM neighbors
+                JOIN entities e ON e.entity_id = neighbors.entity_id
+                WHERE neighbors.entity_id IS NOT NULL
+                GROUP BY e.normalized_key, neighbors.predicate
+                ORDER BY confidence DESC
+                LIMIT %s
+                """,
+                (entity_keys, entity_keys, limit),
+            )
+            rows = await result.fetchall()
+        predicate_weights = {
+            "fixes": 0.10,
+            "resolves": 0.10,
+            "caused_by": 0.08,
+            "depends_on": 0.06,
+            "uses": 0.05,
+            "related_to": 0.04,
+        }
+        expansion: dict[str, float] = {}
+        for row in rows:
+            weight = predicate_weights.get(row["predicate"], 0.03) * float(row["confidence"])
+            expansion[row["normalized_key"]] = max(
+                expansion.get(row["normalized_key"], 0.0),
+                min(weight, 0.10),
+            )
+        return expansion
+
+    async def profile_memory_boosts(
+        self,
+        query: str,
+        entity_keys: list[str],
+    ) -> dict[uuid.UUID, float]:
+        normalized_query = normalize_entity_key(query)
+        async with self.pool.connection() as connection:
+            result = await connection.execute(
+                """
+                SELECT DISTINCT pf.evidence_memory_id
+                FROM profiles p
+                JOIN profile_facts pf ON pf.profile_id = p.profile_id
+                JOIN documents d ON d.memory_id = pf.evidence_memory_id
+                WHERE pf.status = 'active'
+                  AND d.status = 'active'
+                  AND d.current_revision_id = pf.evidence_revision_id
+                  AND (
+                      %s LIKE '%%' || p.canonical_key || '%%'
+                      OR p.canonical_key = ANY(%s)
+                  )
+                """,
+                (normalized_query, entity_keys),
+            )
+            rows = await result.fetchall()
+        return {row["evidence_memory_id"]: 0.08 for row in rows}
