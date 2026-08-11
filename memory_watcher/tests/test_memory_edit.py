@@ -5,6 +5,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from api.routers.memory_edit import edit_memory, delete_memory, add_link, EditRequest, DeleteRequest, AddLinkRequest
+from models.memory_record import resolve_vault_path
 
 
 def _create_test_file(tmp_path):
@@ -23,6 +24,9 @@ async def test_edit_memory(tmp_path, monkeypatch):
     result = await edit_memory(request)
     assert result["status"] == "success"
     assert "Updated" in note.read_text()
+    backup = tmp_path / result["backup"]
+    assert backup.is_relative_to(tmp_path / ".uams" / "backups")
+    assert backup.exists()
 
 
 @pytest.mark.asyncio
@@ -54,3 +58,8 @@ async def test_add_link_noop(tmp_path, monkeypatch):
     request = AddLinkRequest(path="Daily/test-note.md", entity="ExistingEntity")
     result = await add_link(request)
     assert result["status"] == "noop"
+
+
+def test_edit_path_cannot_escape_vault(tmp_path):
+    with pytest.raises(ValueError):
+        resolve_vault_path(tmp_path, "../outside.md")

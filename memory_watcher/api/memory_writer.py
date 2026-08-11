@@ -1,11 +1,14 @@
 import re
 from datetime import date, datetime, timezone
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+from uuid import UUID, uuid4
 
 import yaml
 
 from api.models import RememberRequest
+from models.memory_record import atomic_write, split_frontmatter
 
 
 VAULT_ROOT = Path(__file__).resolve().parents[2]
@@ -50,21 +53,56 @@ def _normalize_tags(tags: Iterable[str]) -> list[str]:
     return list(dict.fromkeys(normalized))
 
 
-def _build_markdown(request: RememberRequest) -> str:
-    if _has_frontmatter(request.text):
-        return request.text.strip() + "\n"
+@dataclass(frozen=True)
+class MemoryWriteResult:
+    memory_id: UUID
+    path: Path
+    vault_path: str
+    index_status: str = "pending"
 
-    today = date.today().isoformat()
-    title = _extract_title(request.text)
+
+def _as_list(value) -> list[str]:
+    if value is None:
+        return []
+    values = value if isinstance(value, list) else [value]
+    return list(dict.fromkeys(str(item).strip() for item in values if str(item).strip()))
+
+
+def _build_markdown(request: RememberRequest, memory_id: UUID) -> tuple[str, UUID]:
+    existing, body = split_frontmatter(request.text)
+    now = datetime.now(timezone.utc).isoformat()
+    raw_memory_id = existing.get("memory_id")
+    managed_id = UUID(str(raw_memory_id)) if raw_memory_id else memory_id
+    timestamps = existing.get("timestamps") if isinstance(existing.get("timestamps"), dict) else {}
+    tags = _normalize_tags([*_as_list(existing.get("tags")), *request.tags])
+
     metadata = {
-        "type": request.category,
-        "date": today,
-        "updated": datetime.now(timezone.utc).isoformat(),
-        "tags": _normalize_tags(request.tags),
+        "memory_id": str(managed_id),
+        "type": str(existing.get("type") or request.category),
+        "status": str(existing.get("status") or "active"),
+        "aliases": _as_list(existing.get("aliases")),
+        "tags": tags,
+        "entities": _as_list(existing.get("entities")),
+        "timestamps": {
+            "created": str(timestamps.get("created") or existing.get("created") or existing.get("date") or now),
+            "updated": now,
+        },
+        "source_agent": existing.get("source_agent") or request.source_agent or "unknown",
+        "project": existing.get("project") or request.project,
+        "relationships": existing.get("relationships") or [],
     }
+    if metadata["type"] in {"episodic", "daily"}:
+        metadata["date"] = existing.get("date") or date.today().isoformat()
+    for key, value in existing.items():
+        if key not in metadata and key not in {"created", "updated"}:
+            metadata[key] = value
 
-    frontmatter = yaml.safe_dump(metadata, sort_keys=False, allow_unicode=False).strip()
-    return f"---\n{frontmatter}\n---\n# {title}\n\n## Summary\n{request.text.strip()}\n"
+    body = body.strip()
+    if not body.startswith("# "):
+        title = _extract_title(body)
+        body = f"# {title}\n\n## Summary\n{body}"
+    frontmatter = yaml.safe_dump(metadata, sort_keys=False, allow_unicode=True).strip()
+    return f"---\n{frontmatter}\n---\n{body}\n", managed_id
 
 
 def _target_directory(category: str) -> Path:
@@ -74,18 +112,19 @@ def _target_directory(category: str) -> Path:
     return target
 
 
-def write_memory(request: RememberRequest) -> Path:
-    content = _build_markdown(request)
-    title = _extract_title(content)
+def write_memory(request: RememberRequest) -> MemoryWriteResult:
+    generated_id = uuid4()
+    content, memory_id = _build_markdown(request, generated_id)
+    _, body = split_frontmatter(content)
+    title = _extract_title(body)
     directory = _target_directory(request.category)
     prefix = date.today().isoformat() if directory.name == "Daily" else ""
-    stem = "-".join(part for part in [prefix, _slugify(title)] if part)
+    stem = "-".join(part for part in [prefix, _slugify(title), memory_id.hex[:12]] if part)
     path = directory / f"{stem}.md"
 
-    counter = 2
-    while path.exists():
-        path = directory / f"{stem}-{counter}.md"
-        counter += 1
-
-    path.write_text(content, encoding="utf-8")
-    return path
+    atomic_write(path, content)
+    return MemoryWriteResult(
+        memory_id=memory_id,
+        path=path,
+        vault_path=path.relative_to(VAULT_ROOT).as_posix(),
+    )

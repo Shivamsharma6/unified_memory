@@ -29,6 +29,8 @@ class RememberRequest(BaseModel):
     text: str
     category: str = "episodic"
     tags: List[str] = Field(default_factory=list)
+    source_agent: Optional[str] = None
+    project: Optional[str] = None
 
 class SummarizeRequest(BaseModel):
     topic: str

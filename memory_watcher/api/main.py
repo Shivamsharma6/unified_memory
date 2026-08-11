@@ -65,7 +65,8 @@ async def search_memory(request: SearchRequest):
 async def remember(request: RememberRequest):
     """Directly ingest a memory bypassing the file watcher (for agent direct writes)."""
     try:
-        path = write_memory(request)
+        write_result = write_memory(request)
+        path = getattr(write_result, "path", write_result)
         try:
             await ingestion_pipeline.process_file(str(path))
             indexed = True
@@ -75,7 +76,9 @@ async def remember(request: RememberRequest):
             warning = str(ingest_error)
         return {
             "status": "success",
-            "path": str(path),
+            "memory_id": str(getattr(write_result, "memory_id", "")) or None,
+            "path": getattr(write_result, "vault_path", str(path)),
+            "index_status": getattr(write_result, "index_status", "pending"),
             "indexed": indexed,
             "warning": warning,
             "message": "Memory written to the vault.",
