@@ -1,6 +1,7 @@
 import re
 import hashlib
 import yaml
+from pathlib import Path
 from typing import List, Dict, Any, Tuple
 from models.document import Document, Chunk, ChunkMetadata
 
@@ -66,14 +67,26 @@ class SemanticChunker:
         frontmatter, content = self._parse_frontmatter(doc.raw_content)
         doc.frontmatter = frontmatter
         
-        doc_tags = frontmatter.get("tags", [])
+        raw_tags = frontmatter.get("tags", [])
+        doc_tags = raw_tags if isinstance(raw_tags, list) else [raw_tags]
         doc_category = frontmatter.get("type", None)
+        timestamp_data = frontmatter.get("timestamps", {})
+        if not isinstance(timestamp_data, dict):
+            timestamp_data = {}
         doc_timestamps = {
-            "created": frontmatter.get("date", None),
-            "updated": frontmatter.get("updated", None)
+            "created": timestamp_data.get("created") or frontmatter.get("date"),
+            "updated": timestamp_data.get("updated") or frontmatter.get("updated")
         }
         
         lines = content.split('\n')
+        document_title = next(
+            (
+                match.group(2).strip()
+                for line in lines
+                if (match := self.header_pattern.match(line)) and len(match.group(1)) == 1
+            ),
+            Path(doc.path).stem if doc.path else "Memory",
+        )
         
         chunks = []
         hierarchy = []
@@ -93,18 +106,26 @@ class SemanticChunker:
             for sub_text in sub_chunks:
                 entities = self._extract_entities(sub_text)
                 tags = list(set(doc_tags + self._extract_tags(sub_text)))
+                context_hierarchy = list(hierarchy) if hierarchy else [document_title]
+                if context_hierarchy[0] != document_title:
+                    context_hierarchy.insert(0, document_title)
+                context = "\n".join(
+                    f"{'#' * min(level, 6)} {heading}"
+                    for level, heading in enumerate(context_hierarchy, start=1)
+                )
+                chunk_content = f"{context}\n\n{sub_text.strip()}"
                 
                 meta = ChunkMetadata(
-                    chunk_id=self._generate_chunk_id(doc.path, hierarchy, chunk_index),
+                    chunk_id=self._generate_chunk_id(doc.path, context_hierarchy, chunk_index),
                     source_file=doc.path,
-                    heading_hierarchy=list(hierarchy),
+                    heading_hierarchy=context_hierarchy,
                     tags=tags,
                     entities=entities,
                     timestamps=doc_timestamps,
                     backlinks=entities, # Simplified: outgoing wikilinks act as local backlinks context
                     semantic_category=doc_category
                 )
-                chunks.append(Chunk(content=sub_text, metadata=meta))
+                chunks.append(Chunk(content=chunk_content, metadata=meta))
                 chunk_index += 1
             current_block = []
 
@@ -132,8 +153,6 @@ class SemanticChunker:
                 if level <= len(hierarchy):
                     hierarchy = hierarchy[:level-1]
                 hierarchy.append(title)
-                
-                current_block.append(line)
             else:
                 current_block.append(line)
                 
