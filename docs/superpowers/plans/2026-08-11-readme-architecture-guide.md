@@ -76,7 +76,17 @@ Follow the `using-git-worktrees` skill and create:
 
 Expected: the worktree is clean and checks out `codex/readme-architecture-guide`.
 
-- [ ] **Step 4: Verify baseline documentation inputs**
+- [ ] **Step 4: Reuse the verified local Python environment without tracking it**
+
+Create an ignored worktree-local symlink:
+
+```bash
+ln -s /Users/shivamsharma/projects/unified_memory/memory_watcher/.venv memory_watcher/.venv
+```
+
+Expected: `memory_watcher/.venv/bin/python` resolves successfully and `git status --short` remains clean.
+
+- [ ] **Step 5: Verify baseline documentation inputs and tests**
 
 Run from the worktree:
 
@@ -85,9 +95,10 @@ git status --short
 bash -n uams
 docker compose -f memory_watcher/docker-compose.yml config --quiet
 memory_watcher/.venv/bin/python -c "import yaml; print('yaml=ok')"
+memory_watcher/.venv/bin/python -m pytest memory_watcher/tests memory_watcher/api/tests tests uams_sdk/tests -q
 ```
 
-Expected: clean Git status and zero command failures.
+Expected: clean Git status, zero command failures, and the full baseline suite passes.
 
 ### Task 2: Create the Single-Machine Architecture Diagram
 
