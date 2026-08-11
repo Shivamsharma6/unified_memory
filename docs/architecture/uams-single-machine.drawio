@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="26.0.0">
+  <diagram id="uams-single-machine" name="Single-Machine Architecture">
+    <mxGraphModel dx="1900" dy="1100" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Unified Agent Memory System" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=28;fontStyle=1;fontColor=#0f172a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="25" width="720" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Single-machine, Markdown-authoritative deployment" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=15;fontColor=#475569;" vertex="1" parent="1">
+          <mxGeometry x="40" y="62" width="720" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" value="Green = authoritative/write path   ·   Blue = read path   ·   Dashed = optional/external" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;dashed=1;fontSize=12;fontColor=#475569;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="35" width="650" height="42" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tier-agents" value="1  Agent Clients" style="swimlane;startSize=40;container=1;pointerEvents=0;collapsible=0;rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;fontStyle=1;fontSize=16;fontColor=#1e3a8a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="110" width="240" height="820" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-codex" value="Codex" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#3b82f6;fontSize=14;fontStyle=1;" vertex="1" parent="tier-agents">
+          <mxGeometry x="35" y="75" width="170" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-claude" value="Claude" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#3b82f6;fontSize=14;fontStyle=1;" vertex="1" parent="tier-agents">
+          <mxGeometry x="35" y="175" width="170" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-hermes" value="Hermes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#3b82f6;fontSize=14;fontStyle=1;" vertex="1" parent="tier-agents">
+          <mxGeometry x="35" y="275" width="170" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-openclaw" value="OpenClaw" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#3b82f6;fontSize=14;fontStyle=1;" vertex="1" parent="tier-agents">
+          <mxGeometry x="35" y="375" width="170" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-custom" value="Custom Agents" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#3b82f6;fontSize=14;fontStyle=1;" vertex="1" parent="tier-agents">
+          <mxGeometry x="35" y="475" width="170" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-policy" value="Shared protocol&#xa;begin_task → recall → end_task" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#93c5fd;dashed=1;fontSize=12;fontColor=#334155;" vertex="1" parent="tier-agents">
+          <mxGeometry x="25" y="620" width="190" height="82" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tier-integration" value="2  Integration Boundary" style="swimlane;startSize=40;container=1;pointerEvents=0;collapsible=0;rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#fb923c;fontStyle=1;fontSize=16;fontColor=#7c2d12;" vertex="1" parent="1">
+          <mxGeometry x="330" y="110" width="260" height="820" as="geometry" />
+        </mxCell>
+        <mxCell id="integration-mcp" value="MCP Server&#xa;14 tools · resource · prompt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffedd5;strokeColor=#f97316;fontSize=14;fontStyle=1;" vertex="1" parent="tier-integration">
+          <mxGeometry x="30" y="100" width="200" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="integration-sdk" value="Python SDK&#xa;async UAMSClient" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffedd5;strokeColor=#f97316;fontSize=14;fontStyle=1;" vertex="1" parent="tier-integration">
+          <mxGeometry x="30" y="310" width="200" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="integration-rest" value="REST API&#xa;JSON over localhost HTTP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffedd5;strokeColor=#f97316;fontSize=14;fontStyle=1;" vertex="1" parent="tier-integration">
+          <mxGeometry x="30" y="520" width="200" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="integration-note" value="Per-client registration&#xa;Generated by ./uams mcp-config" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#fdba74;dashed=1;fontSize=12;fontColor=#334155;" vertex="1" parent="tier-integration">
+          <mxGeometry x="30" y="675" width="200" height="76" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tier-host" value="3  Host Processes and Authoritative Vault" style="swimlane;startSize=40;container=1;pointerEvents=0;collapsible=0;rounded=1;whiteSpace=wrap;html=1;fillColor=#fffbeb;strokeColor=#f59e0b;fontStyle=1;fontSize=16;fontColor=#78350f;" vertex="1" parent="1">
+          <mxGeometry x="640" y="110" width="480" height="820" as="geometry" />
+        </mxCell>
+        <mxCell id="host-api" value="FastAPI + Hybrid Retrieval&#xa;rank fusion · revision validation · evidence" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=15;fontStyle=1;" vertex="1" parent="tier-host">
+          <mxGeometry x="40" y="75" width="400" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="host-reconciler" value="Watcher + Reconciler&#xa;parse · validate · chunk · extract" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=14;fontStyle=1;" vertex="1" parent="tier-host">
+          <mxGeometry x="40" y="285" width="190" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="host-vector-worker" value="Vector Worker&#xa;claim · embed · upsert · ACK" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=14;fontStyle=1;" vertex="1" parent="tier-host">
+          <mxGeometry x="250" y="285" width="190" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="host-markdown" value="Markdown Vault&#xa;AUTHORITATIVE MEMORY&#xa;frontmatter · wikilinks · Git history" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;strokeWidth=4;fontSize=16;fontStyle=1;fontColor=#14532d;" vertex="1" parent="tier-host">
+          <mxGeometry x="40" y="525" width="400" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="host-supervision" value="launchd on macOS · PID supervision on Linux&#xa;API and watcher run on the host" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#fbbf24;dashed=1;fontSize=12;fontColor=#475569;" vertex="1" parent="tier-host">
+          <mxGeometry x="80" y="710" width="320" height="68" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tier-docker" value="4  Data and Embedding Services (Single Machine)" style="swimlane;startSize=40;container=1;pointerEvents=0;collapsible=0;rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#64748b;fontStyle=1;fontSize=16;fontColor=#1e293b;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="110" width="500" height="820" as="geometry" />
+        </mxCell>
+        <mxCell id="docker-postgres" value="PostgreSQL 16 (Docker)&#xa;revisions · FTS/exact · profiles · claims&#xa;jobs · audit · durable vector outbox" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#e0f2fe;strokeColor=#0284c7;strokeWidth=2;fontSize=14;fontStyle=1;" vertex="1" parent="tier-docker">
+          <mxGeometry x="55" y="75" width="390" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="docker-qdrant" value="Qdrant (Docker)&#xa;memory_chunks_v2&#xa;semantic vectors and payload filters" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#ede9fe;strokeColor=#7c3aed;strokeWidth=2;fontSize=14;fontStyle=1;" vertex="1" parent="tier-docker">
+          <mxGeometry x="55" y="350" width="390" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="docker-ollama" value="Ollama (external host service)&#xa;mxbai-embed-large:335m · 1024 dimensions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#64748b;dashed=1;fontSize=14;fontStyle=1;" vertex="1" parent="tier-docker">
+          <mxGeometry x="55" y="610" width="390" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="docker-volumes" value="Named volumes&#xa;postgres_data · qdrant_storage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=12;fontColor=#475569;" vertex="1" parent="tier-docker">
+          <mxGeometry x="95" y="740" width="310" height="58" as="geometry" />
+        </mxCell>
+
+        <mxCell id="edge-codex-mcp" value="stdio / tool calls" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;fontColor=#475569;fontSize=11;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.15;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="agent-codex" target="integration-mcp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-claude-mcp" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.32;" edge="1" parent="1" source="agent-claude" target="integration-mcp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-hermes-mcp" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="agent-hermes" target="integration-mcp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-openclaw-mcp" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.68;" edge="1" parent="1" source="agent-openclaw" target="integration-mcp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-custom-mcp" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.85;" edge="1" parent="1" source="agent-custom" target="integration-mcp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="edge-mcp-api" value="MCP → SDK client" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563eb;strokeWidth=2;fontColor=#1d4ed8;fontSize=11;endArrow=block;endFill=1;exitX=1;exitY=0.35;entryX=0;entryY=0.2;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="integration-mcp" target="host-api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-sdk-api" value="HTTP / JSON" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563eb;strokeWidth=2;fontColor=#1d4ed8;fontSize=11;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="integration-sdk" target="host-api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-rest-api" value="HTTP / JSON" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563eb;strokeWidth=2;fontColor=#1d4ed8;fontSize=11;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.8;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="integration-rest" target="host-api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="edge-api-markdown" value="atomic remember / edit" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#16a34a;strokeWidth=3;fontColor=#166534;fontSize=11;endArrow=block;endFill=1;exitX=0.25;exitY=1;entryX=0.25;entryY=0;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="host-api" target="host-markdown">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="780" y="530" />
+              <mxPoint x="780" y="635" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-markdown-reconciler" value="filesystem event / full scan" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#16a34a;strokeWidth=3;fontColor=#166534;fontSize=11;endArrow=block;endFill=1;exitX=0.1;exitY=0;entryX=0.1;entryY=1;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="host-markdown" target="host-reconciler">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="700" y="620" />
+              <mxPoint x="700" y="535" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="edge-api-postgres" value="lexical · exact · graph · profile" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563eb;strokeWidth=3;fontColor=#1d4ed8;fontSize=11;endArrow=block;startArrow=block;endFill=1;startFill=1;exitX=1;exitY=0.25;entryX=0;entryY=0.25;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="host-api" target="docker-postgres">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-api-qdrant" value="semantic candidates" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563eb;strokeWidth=3;fontColor=#1d4ed8;fontSize=11;endArrow=block;startArrow=block;endFill=1;startFill=1;exitX=1;exitY=0.55;entryX=0;entryY=0.25;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="host-api" target="docker-qdrant">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1190" y="245" />
+              <mxPoint x="1190" y="505" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-api-ollama" value="query embedding" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563eb;strokeWidth=2;fontColor=#1d4ed8;fontSize=11;endArrow=block;startArrow=block;endFill=1;startFill=1;exitX=1;exitY=0.8;entryX=0;entryY=0.35;labelBackgroundColor=#ffffff;dashed=1;" edge="1" parent="1" source="host-api" target="docker-ollama">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1160" y="270" />
+              <mxPoint x="1160" y="785" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="edge-reconciler-postgres" value="1  stage revision + outbox" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d97706;strokeWidth=3;fontColor=#92400e;fontSize=11;endArrow=block;endFill=1;exitX=1;exitY=0.25;entryX=0;entryY=0.7;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="host-reconciler" target="docker-postgres">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1205" y="440" />
+              <mxPoint x="1205" y="330" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-worker-postgres" value="2 claim work / 5 ACK + activate" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d97706;strokeWidth=3;fontColor=#92400e;fontSize=11;endArrow=block;startArrow=block;endFill=1;startFill=1;exitX=1;exitY=0.2;entryX=0;entryY=0.9;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="host-vector-worker" target="docker-postgres">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1235" y="420" />
+              <mxPoint x="1235" y="360" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-worker-qdrant" value="4  upsert / ACK" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d97706;strokeWidth=3;fontColor=#92400e;fontSize=11;endArrow=block;startArrow=block;endFill=1;startFill=1;exitX=1;exitY=0.55;entryX=0;entryY=0.65;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="host-vector-worker" target="docker-qdrant">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-worker-ollama" value="3  chunk embeddings" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d97706;strokeWidth=2;fontColor=#92400e;fontSize=11;endArrow=block;startArrow=block;endFill=1;startFill=1;exitX=1;exitY=0.85;entryX=0;entryY=0.7;labelBackgroundColor=#ffffff;dashed=1;" edge="1" parent="1" source="host-vector-worker" target="docker-ollama">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1215" y="500" />
+              <mxPoint x="1215" y="820" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="footer-authority" value="Recovery invariant: if PostgreSQL or Qdrant is lost, rebuild both from Markdown. Derived-state failure never changes the authoritative file." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfdf5;strokeColor=#16a34a;strokeWidth=2;fontColor=#14532d;fontSize=13;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="310" y="965" width="1090" height="58" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
