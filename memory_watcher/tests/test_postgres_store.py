@@ -17,4 +17,7 @@ def test_postgres_config_redacts_password(monkeypatch):
 
 
 def test_migrations_are_ordered():
-    assert [path.name for path in migration_paths()] == ["001_control_plane.sql"]
+    assert [path.name for path in migration_paths()] == [
+        "001_control_plane.sql",
+        "002_projection_lifecycle.sql",
+    ]

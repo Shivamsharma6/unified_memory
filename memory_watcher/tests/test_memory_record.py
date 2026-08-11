@@ -22,6 +22,15 @@ def test_existing_note_gets_deterministic_memory_id(tmp_path):
     assert first.memory_id == second.memory_id
 
 
+def test_workflow_status_is_preserved_for_lifecycle_mapping(tmp_path):
+    path = tmp_path / "Projects" / "Approved Design.md"
+    content = "---\ntype: semantic\nstatus: approved\n---\n# Approved Design\n"
+
+    record = parse_memory(path, content, vault_root=tmp_path)
+
+    assert record.status == "approved"
+
+
 def test_resolve_vault_path_rejects_escape(tmp_path):
     try:
         resolve_vault_path(tmp_path, "../outside.md")

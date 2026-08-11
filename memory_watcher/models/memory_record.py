@@ -54,7 +54,7 @@ class MemoryRecord(BaseModel):
     vault_path: str
     title: str
     memory_type: str = Field(alias="type")
-    status: Literal["active", "superseded", "archived", "deleted"] = "active"
+    status: str = "active"
     aliases: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     entities: list[str] = Field(default_factory=list)
