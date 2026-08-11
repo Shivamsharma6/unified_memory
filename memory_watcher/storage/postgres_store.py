@@ -101,6 +101,7 @@ class PostgresStore:
             max_size=self.config.max_pool_size,
             open=False,
             kwargs={"row_factory": dict_row},
+            check=AsyncConnectionPool.check_connection,
         )
 
     async def open(self) -> None:
@@ -205,6 +206,16 @@ class PostgresStore:
                         updated_at = now()
                     """,
                     (record.memory_id, record.vault_path, record.memory_type, document_status),
+                )
+                await connection.execute(
+                    """
+                    UPDATE ingestion_jobs
+                    SET status = 'succeeded', finished_at = now(), updated_at = now()
+                    WHERE event_type = 'reconcile'
+                      AND vault_path = %s
+                      AND status = 'failed'
+                    """,
+                    (record.vault_path,),
                 )
 
                 existing_result = await connection.execute(
@@ -515,10 +526,12 @@ class PostgresStore:
             async with connection.transaction():
                 await connection.execute(
                     """
-                    INSERT INTO ingestion_jobs (event_type, status, attempts, error, finished_at)
-                    VALUES ('reconcile', 'failed', 1, %s, now())
+                    INSERT INTO ingestion_jobs (
+                        event_type, status, attempts, error, finished_at, vault_path
+                    )
+                    VALUES ('reconcile', 'failed', 1, %s, now(), %s)
                     """,
-                    (f"{vault_path}: {error}",),
+                    (f"{vault_path}: {error}", vault_path),
                 )
                 await connection.execute(
                     """

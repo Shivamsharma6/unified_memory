@@ -1,4 +1,4 @@
-.PHONY: install start stop restart status migrate doctor integrate logs test test-integration clean
+.PHONY: install start stop restart status migrate doctor integrate logs test test-integration evaluate clean
 
 VENV = memory_watcher/.venv
 PYTHON = $(VENV)/bin/python
@@ -45,6 +45,9 @@ test:
 
 test-integration:
 	$(PYTHON) -m pytest memory_watcher/tests/integration/ -v
+
+evaluate:
+	$(PYTHON) memory_watcher/scripts/evaluate_retrieval.py --require-hit1 0.80 --require-hit5 0.90
 
 clean:
 	./uams stop

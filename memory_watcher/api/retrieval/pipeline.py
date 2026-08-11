@@ -285,8 +285,5 @@ class RetrievalPipeline:
 
     async def search(self, request: SearchRequest) -> SearchResponse:
         if self.hybrid is not None:
-            try:
-                return await self.hybrid.search(request)
-            except Exception as error:
-                logger.warning("Hybrid retrieval failed; using legacy fallback: %s", error)
+            return await self.hybrid.search(request)
         return await self._step8_assemble(request)

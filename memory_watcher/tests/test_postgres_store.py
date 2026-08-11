@@ -20,4 +20,5 @@ def test_migrations_are_ordered():
     assert [path.name for path in migration_paths()] == [
         "001_control_plane.sql",
         "002_projection_lifecycle.sql",
+        "003_reconciliation_failure_paths.sql",
     ]

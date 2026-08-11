@@ -107,3 +107,24 @@ async def test_context_request_max_tokens_reaches_compressor(monkeypatch):
     )
 
     assert seen["max_tokens"] == 321
+
+
+@pytest.mark.asyncio
+async def test_initialized_control_plane_never_falls_back_to_unvalidated_legacy_results(
+    monkeypatch,
+):
+    pipeline = RetrievalPipeline()
+
+    class BrokenHybrid:
+        async def search(self, request):
+            raise RuntimeError("postgres control plane unavailable")
+
+    pipeline.hybrid = BrokenHybrid()
+
+    async def unsafe_legacy(request):
+        raise AssertionError("legacy retrieval must not run after control-plane activation")
+
+    monkeypatch.setattr(pipeline, "_step8_assemble", unsafe_legacy)
+
+    with pytest.raises(RuntimeError, match="postgres control plane unavailable"):
+        await pipeline.search(SearchRequest(query="current revision only"))

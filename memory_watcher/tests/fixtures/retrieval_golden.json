@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "description": "Repository-grounded release gate for current UAMS architecture and operating rules.",
+  "queries": [
+    {
+      "id": "markdown-authority",
+      "query": "What remains the authoritative shared memory record?",
+      "expected_sources": [
+        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
+      ]
+    },
+    {
+      "id": "qdrant-role",
+      "query": "Which engine remains responsible for semantic vector search?",
+      "expected_sources": [
+        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
+      ]
+    },
+    {
+      "id": "postgres-role",
+      "query": "Which system stores exact profiles, revisions, provenance, graph claims, and durable ingestion coordination?",
+      "expected_sources": [
+        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
+      ]
+    },
+    {
+      "id": "redis-decision",
+      "query": "Why is Redis unnecessary for the one-machine deployment?",
+      "expected_sources": [
+        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
+      ]
+    },
+    {
+      "id": "historical-default",
+      "query": "How does normal retrieval treat archived and superseded memories?",
+      "expected_sources": [
+        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
+      ]
+    },
+    {
+      "id": "distillation-rule",
+      "query": "Should agents save raw conversations or distill reusable atomic knowledge?",
+      "expected_sources": ["AGENTS.md"]
+    },
+    {
+      "id": "chunking-rule",
+      "query": "How long may a Markdown wall of text be before a structural break is required?",
+      "expected_sources": ["AGENTS.md"]
+    },
+    {
+      "id": "startup-lifecycle",
+      "query": "Which command starts both databases, migrates the schema, starts host services, and waits for readiness?",
+      "expected_sources": [
+        "docs/superpowers/plans/2026-08-11-unified-memory-reliability.md"
+      ]
+    },
+    {
+      "id": "mcp-lifecycle",
+      "query": "What are the required begin and end calls in the MCP task lifecycle?",
+      "expected_sources": ["README.md"]
+    },
+    {
+      "id": "localhost-infrastructure",
+      "query": "Which infrastructure services run locally in Docker on the first deployment?",
+      "expected_sources": [
+        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md",
+        "README.md"
+      ]
+    },
+    {
+      "id": "profile-authority",
+      "query": "Where do canonical user and agent profiles live, and which database materializes their current facts?",
+      "expected_sources": [
+        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
+      ]
+    },
+    {
+      "id": "entity-alias-resolution",
+      "query": "How does entity resolution normalize aliases while preserving display names?",
+      "expected_sources": [
+        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
+      ]
+    },
+    {
+      "id": "graph-evidence-gate",
+      "query": "Which graph claim statuses may influence normal retrieval ranking, and why can candidate claims not boost results?",
+      "expected_sources": [
+        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
+      ]
+    },
+    {
+      "id": "historical-opt-in",
+      "query": "Can a historical search include archived or superseded revisions?",
+      "expected_sources": [
+        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
+      ]
+    },
+    {
+      "id": "profile-conflict-resolution",
+      "query": "Which durable store selects the current supported profile fact and handles conflict resolution?",
+      "expected_sources": [
+        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
+      ]
+    },
+    {
+      "id": "exact-collection-name",
+      "query": "What is the exact name of the Qdrant collection that stores the new chunk vectors?",
+      "expected_sources": [
+        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
+      ]
+    }
+  ]
+}
