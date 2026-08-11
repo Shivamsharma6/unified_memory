@@ -104,6 +104,8 @@ Provide one linear path:
 
 Windows commands may be listed as compatibility alternatives, but the verified macOS/Linux shell path remains primary. The README must not imply equal supervision behavior where it has not been verified.
 
+The root launcher must explicitly load the trusted, shell-compatible root `.env`. On macOS it must also pass the resolved database, vector, embedding, LLM, API, and vault settings into each `launchctl submit` command because launchd does not inherit custom variables from the invoking shell.
+
 ### 3. Daily Use
 
 Explain:
@@ -255,6 +257,7 @@ Before completion:
 - Verify every documented `./uams` command exists in the launcher.
 - Verify Make targets against `Makefile`.
 - Verify environment variables against `.env.example`, Compose, and configuration classes.
+- Verify the launcher loads root `.env` values for ordinary child commands and explicitly propagates them into launchd jobs.
 - Verify API routes against FastAPI routers.
 - Verify MCP tools against `uams_sdk/uams_sdk/mcp_server.py`.
 - Verify local Markdown links and architecture asset paths.
@@ -273,4 +276,5 @@ Before completion:
 - Recovery instructions rebuild derived state without treating PostgreSQL or Qdrant as canonical.
 - Core, optional, and legacy features are not conflated.
 - Commands, routes, configuration, links, and diagrams pass the validation strategy.
+- A value configured in root `.env` reaches Compose, migrations, the API, and the watcher consistently.
 - No unrelated workspace change is staged or committed.

@@ -33,6 +33,8 @@ timestamps:
 ## File Map
 
 - Modify: `README.md` — authoritative project entry point and complete progressive guide.
+- Modify: `uams` — load root `.env` and propagate resolved settings into supervised macOS jobs.
+- Create: `memory_watcher/tests/test_launcher_environment.py` — regression coverage for `.env` loading and launchd propagation.
 - Create: `docs/architecture/uams-single-machine.drawio` — editable source for the deployment topology.
 - Create: `docs/architecture/uams-single-machine.svg` — crisp README-rendered architecture asset.
 - Temporary, do not commit: `docs/architecture/uams-single-machine-preview.png` — visual QA export without embedded draw.io metadata.
@@ -174,6 +176,63 @@ git commit -m "docs(architecture): add single-machine memory topology"
 ```
 
 Expected: only the two architecture assets are committed.
+
+### Task 2B: Make the Documented Root `.env` Effective
+
+**Files:**
+
+- Modify: `uams`
+- Create: `memory_watcher/tests/test_launcher_environment.py`
+
+- [ ] **Step 1: Write failing launcher-environment tests**
+
+Use a temporary launcher copy with executable stubs to verify two behaviors:
+
+- `./uams doctor` receives a sentinel `UAMS_POSTGRES_PASSWORD` loaded from the root `.env`.
+- macOS `launchctl submit` arguments explicitly include the resolved PostgreSQL, Qdrant, embedding, LLM, API, and vault variables.
+
+- [ ] **Step 2: Run RED**
+
+Run:
+
+```bash
+memory_watcher/.venv/bin/python -m pytest memory_watcher/tests/test_launcher_environment.py -q
+```
+
+Expected: both tests fail because the launcher neither loads root `.env` nor passes custom variables into launchd jobs.
+
+- [ ] **Step 3: Implement the minimal launcher fix**
+
+At launcher startup, source a trusted root `.env` with automatic export enabled. In both launchd submit commands, pass explicit assignments for:
+
+```text
+UAMS_VAULT_PATH UAMS_API_HOST UAMS_API_PORT UAMS_API_URL
+UAMS_POSTGRES_HOST UAMS_POSTGRES_PORT UAMS_POSTGRES_DB UAMS_POSTGRES_USER
+UAMS_POSTGRES_PASSWORD UAMS_POSTGRES_POOL_MIN UAMS_POSTGRES_POOL_MAX
+UAMS_POSTGRES_CONNECT_TIMEOUT QDRANT_HOST QDRANT_HTTP_PORT QDRANT_GRPC_PORT
+UAMS_EMBED_PROVIDER UAMS_EMBED_MODEL UAMS_EMBED_DIMENSION UAMS_EMBED_API_KEY
+UAMS_LLM_PROVIDER UAMS_LLM_BASE_URL UAMS_LLM_MODEL UAMS_LLM_API_KEY
+```
+
+Do not print secret values.
+
+- [ ] **Step 4: Run GREEN and shell validation**
+
+Run:
+
+```bash
+memory_watcher/.venv/bin/python -m pytest memory_watcher/tests/test_launcher_environment.py -q
+bash -n uams
+```
+
+Expected: both tests pass and shell syntax is valid.
+
+- [ ] **Step 5: Commit the configuration fix**
+
+```bash
+git add uams memory_watcher/tests/test_launcher_environment.py docs/superpowers/specs/2026-08-11-readme-architecture-guide-design.md docs/superpowers/plans/2026-08-11-readme-architecture-guide.md
+git commit -m "fix(launcher): propagate root environment consistently"
+```
 
 ### Task 3: Rewrite the README as a Progressive Guide
 
@@ -452,6 +511,8 @@ Expected branch-owned paths:
 README.md
 docs/architecture/uams-single-machine.drawio
 docs/architecture/uams-single-machine.svg
+memory_watcher/tests/test_launcher_environment.py
+uams
 docs/superpowers/plans/2026-08-11-readme-architecture-guide.md
 docs/superpowers/specs/2026-08-11-readme-architecture-guide-design.md
 ```
