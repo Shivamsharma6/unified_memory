@@ -1,6 +1,6 @@
 services:
   qdrant:
-    image: ${QDRANT_IMAGE:-qdrant/qdrant:latest}
+    image: ${QDRANT_IMAGE:-qdrant/qdrant@sha256:b3063c673f3973877c038eeecc392bad5011f072ee7892b56c9a8e204a3bdea9}
     ports:
       - "${QDRANT_HOST:-127.0.0.1}:${QDRANT_HTTP_PORT:-6333}:6333"
       - "${QDRANT_HOST:-127.0.0.1}:${QDRANT_GRPC_PORT:-6334}:6334"
@@ -14,5 +14,24 @@ services:
       retries: 12
       start_period: 10s
 
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-bookworm}
+    ports:
+      - "${UAMS_POSTGRES_HOST:-127.0.0.1}:${UAMS_POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${UAMS_POSTGRES_DB:-uams}
+      POSTGRES_USER: ${UAMS_POSTGRES_USER:-uams}
+      POSTGRES_PASSWORD: ${UAMS_POSTGRES_PASSWORD:-uams-local-only}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
 volumes:
   qdrant_storage:
+  postgres_data:
