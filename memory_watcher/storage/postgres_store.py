@@ -976,3 +976,302 @@ class PostgresStore:
             )
             rows = await result.fetchall()
         return {row["evidence_memory_id"]: 0.08 for row in rows}
+
+    async def _claim_rows(
+        self,
+        *,
+        include_candidates: bool = False,
+        include_historical: bool = False,
+    ) -> list[dict[str, Any]]:
+        statuses = ["explicit", "verified"]
+        if include_candidates:
+            statuses.append("candidate")
+        lifecycle = (
+            "r.state IN ('active', 'superseded')"
+            if include_historical
+            else "d.status = 'active' AND d.current_revision_id = c.evidence_revision_id"
+        )
+        async with self.pool.connection() as connection:
+            result = await connection.execute(
+                f"""
+                SELECT c.claim_id, c.predicate, c.status, c.confidence,
+                       c.evidence_memory_id, c.evidence_revision_id,
+                       s.canonical_name AS subject_name,
+                       s.entity_type AS subject_type,
+                       o.canonical_name AS object_name,
+                       o.entity_type AS object_type,
+                       c.object_value,
+                       d.path AS evidence_path
+                FROM claims c
+                JOIN entities s ON s.entity_id = c.subject_entity_id
+                LEFT JOIN entities o ON o.entity_id = c.object_entity_id
+                JOIN documents d ON d.memory_id = c.evidence_memory_id
+                JOIN document_revisions r ON r.revision_id = c.evidence_revision_id
+                WHERE c.status = ANY(%s) AND {lifecycle}
+                ORDER BY c.claim_id
+                """,
+                (statuses,),
+            )
+            return await result.fetchall()
+
+    @staticmethod
+    def _claim_graph(rows: list[dict[str, Any]]) -> dict[str, Any]:
+        nodes: dict[str, dict[str, Any]] = {}
+        links = []
+        for row in rows:
+            subject = row["subject_name"]
+            object_name = row["object_name"]
+            if object_name is None:
+                object_name = f"Literal:{row['claim_id']}"
+                object_label = row["object_value"]
+                object_type = "literal"
+            else:
+                object_label = object_name
+                object_type = row["object_type"]
+            nodes[subject] = {
+                "id": subject,
+                "label": subject,
+                "type": row["subject_type"],
+            }
+            nodes[object_name] = {
+                "id": object_name,
+                "label": object_label,
+                "type": object_type,
+            }
+            links.append(
+                {
+                    "key": str(row["claim_id"]),
+                    "source": subject,
+                    "target": object_name,
+                    "relation": row["predicate"],
+                    "predicate": row["predicate"],
+                    "claim_id": str(row["claim_id"]),
+                    "evidence_memory_id": str(row["evidence_memory_id"]),
+                    "evidence_revision_id": str(row["evidence_revision_id"]),
+                    "evidence_path": row["evidence_path"],
+                    "confidence": float(row["confidence"]),
+                    "status": row["status"],
+                }
+            )
+        return {
+            "directed": True,
+            "multigraph": True,
+            "graph": {},
+            "nodes": list(nodes.values()),
+            "links": links,
+        }
+
+    async def export_claim_graph(
+        self,
+        *,
+        include_candidates: bool = False,
+        include_historical: bool = False,
+    ) -> dict[str, Any]:
+        rows = await self._claim_rows(
+            include_candidates=include_candidates,
+            include_historical=include_historical,
+        )
+        return self._claim_graph(rows)
+
+    async def graph_neighborhood(
+        self,
+        entity: str,
+        *,
+        radius: int = 1,
+        include_candidates: bool = False,
+        include_historical: bool = False,
+    ) -> dict[str, Any] | None:
+        graph = await self.export_claim_graph(
+            include_candidates=include_candidates,
+            include_historical=include_historical,
+        )
+        requested_key = normalize_entity_key(entity)
+        start = next(
+            (
+                node["id"]
+                for node in graph["nodes"]
+                if normalize_entity_key(str(node["label"])) == requested_key
+            ),
+            None,
+        )
+        if start is None:
+            return None
+        adjacency: dict[str, set[str]] = {}
+        for link in graph["links"]:
+            adjacency.setdefault(link["source"], set()).add(link["target"])
+            adjacency.setdefault(link["target"], set()).add(link["source"])
+        reached = {start}
+        frontier = {start}
+        for _ in range(max(0, radius)):
+            frontier = {
+                neighbor
+                for node in frontier
+                for neighbor in adjacency.get(node, set())
+                if neighbor not in reached
+            }
+            reached.update(frontier)
+        graph["nodes"] = [node for node in graph["nodes"] if node["id"] in reached]
+        graph["links"] = [
+            link
+            for link in graph["links"]
+            if link["source"] in reached and link["target"] in reached
+        ]
+        return graph
+
+    async def get_profile(
+        self,
+        profile_id: str,
+        *,
+        include_historical: bool = False,
+    ) -> dict[str, Any] | None:
+        try:
+            parsed_id = uuid.UUID(profile_id)
+        except ValueError:
+            parsed_id = None
+        async with self.pool.connection() as connection:
+            if parsed_id:
+                profile_result = await connection.execute(
+                    "SELECT * FROM profiles WHERE profile_id = %s",
+                    (parsed_id,),
+                )
+            else:
+                profile_result = await connection.execute(
+                    "SELECT * FROM profiles WHERE canonical_key = %s",
+                    (normalize_entity_key(profile_id),),
+                )
+            profile = await profile_result.fetchone()
+            if profile is None:
+                return None
+            lifecycle = (
+                "pf.status IN ('active', 'superseded')"
+                if include_historical
+                else "pf.status = 'active' AND d.status = 'active' "
+                "AND d.current_revision_id = pf.evidence_revision_id"
+            )
+            facts_result = await connection.execute(
+                f"""
+                SELECT pf.fact_id, pf.fact_key, pf.fact_value, pf.status,
+                       pf.evidence_memory_id, pf.evidence_revision_id,
+                       pf.valid_from, pf.valid_to, d.path AS source_file
+                FROM profile_facts pf
+                JOIN documents d ON d.memory_id = pf.evidence_memory_id
+                WHERE pf.profile_id = %s AND {lifecycle}
+                ORDER BY pf.fact_key, pf.valid_from DESC
+                """,
+                (profile["profile_id"],),
+            )
+            facts = await facts_result.fetchall()
+        if not facts and not include_historical:
+            return None
+        return {
+            "profile_id": str(profile["profile_id"]),
+            "profile_type": profile["profile_type"],
+            "canonical_key": profile["canonical_key"],
+            "display_name": profile["display_name"],
+            "metadata": profile["metadata"],
+            "facts": [
+                {
+                    "fact_id": str(fact["fact_id"]),
+                    "key": fact["fact_key"],
+                    "value": fact["fact_value"],
+                    "status": fact["status"],
+                    "evidence_memory_id": str(fact["evidence_memory_id"]),
+                    "evidence_revision_id": str(fact["evidence_revision_id"]),
+                    "source_file": fact["source_file"],
+                    "valid_from": fact["valid_from"],
+                    "valid_to": fact["valid_to"],
+                }
+                for fact in facts
+            ],
+        }
+
+    async def get_memory_status(self, memory_id: uuid.UUID) -> dict[str, Any] | None:
+        async with self.pool.connection() as connection:
+            result = await connection.execute(
+                """
+                SELECT d.memory_id, d.path, d.status AS document_status,
+                       d.current_revision_id,
+                       latest.revision_id AS latest_revision_id,
+                       latest.state AS revision_state,
+                       job.status AS job_status,
+                       outbox.status AS outbox_status,
+                       outbox.last_error
+                FROM documents d
+                LEFT JOIN LATERAL (
+                    SELECT revision_id, state
+                    FROM document_revisions
+                    WHERE memory_id = d.memory_id
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                ) latest ON true
+                LEFT JOIN LATERAL (
+                    SELECT status
+                    FROM ingestion_jobs
+                    WHERE memory_id = d.memory_id
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                ) job ON true
+                LEFT JOIN LATERAL (
+                    SELECT status, last_error
+                    FROM vector_outbox
+                    WHERE memory_id = d.memory_id
+                    ORDER BY outbox_id DESC
+                    LIMIT 1
+                ) outbox ON true
+                WHERE d.memory_id = %s
+                """,
+                (memory_id,),
+            )
+            row = await result.fetchone()
+        if row is None:
+            return None
+        indexed = (
+            row["current_revision_id"] == row["latest_revision_id"]
+            and row["revision_state"] == "active"
+            and row["document_status"] == "active"
+        )
+        failed = row["job_status"] == "failed" or row["outbox_status"] == "failed"
+        return {
+            "memory_id": str(row["memory_id"]),
+            "path": row["path"],
+            "document_status": row["document_status"],
+            "current_revision_id": (
+                str(row["current_revision_id"]) if row["current_revision_id"] else None
+            ),
+            "latest_revision_id": (
+                str(row["latest_revision_id"]) if row["latest_revision_id"] else None
+            ),
+            "revision_state": row["revision_state"],
+            "index_status": "indexed" if indexed else ("failed" if failed else "pending"),
+            "job_status": row["job_status"],
+            "outbox_status": row["outbox_status"],
+            "error": row["last_error"],
+        }
+
+    async def list_entities(self) -> list[str]:
+        async with self.pool.connection() as connection:
+            result = await connection.execute(
+                """
+                SELECT DISTINCT e.canonical_name
+                FROM entities e
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM mentions m
+                    JOIN documents d ON d.memory_id = m.memory_id
+                    WHERE m.entity_id = e.entity_id
+                      AND d.status = 'active'
+                      AND d.current_revision_id = m.revision_id
+                ) OR EXISTS (
+                    SELECT 1
+                    FROM claims c
+                    JOIN documents d ON d.memory_id = c.evidence_memory_id
+                    WHERE (c.subject_entity_id = e.entity_id OR c.object_entity_id = e.entity_id)
+                      AND c.status IN ('explicit', 'verified')
+                      AND d.status = 'active'
+                      AND d.current_revision_id = c.evidence_revision_id
+                )
+                ORDER BY e.canonical_name
+                """
+            )
+            rows = await result.fetchall()
+        return [row["canonical_name"] for row in rows]

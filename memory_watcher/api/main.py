@@ -5,6 +5,7 @@ from api.routers.graph import router as graph_router
 from api.routers.identity import router as identity_router
 from api.routers.quality import router as quality_router
 from api.routers.memory_edit import router as memory_edit_router
+from api.routers.profiles import router as profiles_router
 from fastapi import FastAPI, HTTPException
 from api.models import SearchRequest, SearchResponse, RememberRequest, SummarizeRequest, ContextRequest, ProcedureRequest
 from api.memory_writer import write_memory
@@ -23,6 +24,7 @@ app.include_router(graph_router)
 app.include_router(identity_router)
 app.include_router(quality_router)
 app.include_router(memory_edit_router)
+app.include_router(profiles_router)
 
 pipeline = RetrievalPipeline()
 ingestion_pipeline = IngestionPipeline()
@@ -45,6 +47,7 @@ def _get_llm() -> LLMProvider:
 @app.on_event("startup")
 async def startup_event():
     await pipeline.initialize()
+    app.state.control_store = pipeline.control_store if pipeline.hybrid is not None else None
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -114,45 +117,35 @@ async def summarize(request: SummarizeRequest):
 
 @app.post("/entities", tags=["Graph"])
 async def get_entities():
-    """Retrieve recognized entities from the Knowledge Graph."""
-    try:
-        G = pipeline.kg_store.G
-        nodes = []
-        for node, data in G.nodes(data=True):
-            if str(node).startswith("DOC:") or data.get("type") == "document":
-                continue
-            nodes.append(str(node))
-        if nodes:
-            return {"entities": nodes}
-    except Exception:
-        pass
-    return {"entities": ["OpenClaw", "Hermes", "Unified Memory System", "Qdrant"]}
+    """Retrieve entities evidenced by current active memories."""
+    store = getattr(app.state, "control_store", None)
+    if store is None:
+        raise HTTPException(status_code=503, detail="PostgreSQL control plane is unavailable")
+    return {"entities": await store.list_entities()}
 
 @app.post("/relations", tags=["Graph"])
 async def get_relations(entity: str):
-    """Fetch 1-hop relations for a given entity."""
-    try:
-        G = pipeline.kg_store.G
-        matched_node = None
-        for node in G.nodes():
-            if str(node).lower() == entity.lower():
-                matched_node = node
-                break
-                
-        relations = []
-        if matched_node:
-            for target in G.successors(matched_node):
-                rel_type = G[matched_node][target].get("relation", "RELATED_TO").upper()
-                relations.append({"type": rel_type, "target": str(target)})
-            for source in G.predecessors(matched_node):
-                rel_type = G[source][matched_node].get("relation", "RELATED_TO").upper()
-                relations.append({"type": f"INVERSE_{rel_type}", "target": str(source)})
-                
-        if relations:
-            return {"entity": str(matched_node or entity), "relations": relations}
-    except Exception:
-        pass
-    return {"entity": entity, "relations": [{"type": "USES", "target": "Qdrant"}]}
+    """Fetch current, evidenced one-hop relations for an entity."""
+    store = getattr(app.state, "control_store", None)
+    if store is None:
+        raise HTTPException(status_code=503, detail="PostgreSQL control plane is unavailable")
+    graph = await store.graph_neighborhood(entity, radius=1)
+    if graph is None:
+        raise HTTPException(status_code=404, detail=f"Entity not found: {entity}")
+    relations = []
+    for link in graph["links"]:
+        outgoing = link["source"].casefold() == entity.casefold()
+        relation = {
+            "type": link["predicate"].upper() if outgoing else f"INVERSE_{link['predicate'].upper()}",
+            "target": link["target"] if outgoing else link["source"],
+            **{
+                key: value
+                for key, value in link.items()
+                if key not in {"source", "target", "relation", "predicate"}
+            },
+        }
+        relations.append(relation)
+    return {"entity": entity, "relations": relations}
 
 @app.post("/context", tags=["Orchestration"])
 async def get_context(request: ContextRequest):

@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from models.memory_record import atomic_write, resolve_vault_path
@@ -32,6 +32,21 @@ class AddLinkRequest(BaseModel):
     path: str
     entity: str
     context: Optional[str] = None
+
+
+@router.get("/status/{memory_id}")
+async def memory_status(memory_id: str, request: Request):
+    store = getattr(request.app.state, "control_store", None)
+    if store is None:
+        raise HTTPException(status_code=503, detail="PostgreSQL control plane is unavailable")
+    try:
+        parsed_memory_id = uuid.UUID(memory_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="memory_id must be a UUID") from error
+    status = await store.get_memory_status(parsed_memory_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail=f"Memory not found: {memory_id}")
+    return status
 
 
 def _vault_root() -> Path:

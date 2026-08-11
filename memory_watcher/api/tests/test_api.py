@@ -54,3 +54,31 @@ def test_procedures_endpoint():
     assert response.status_code == 200
     assert response.json()["procedures"]
     assert "AGENTS.md" in response.json()["procedures"][0]
+
+
+def test_entities_and_relations_use_control_plane(monkeypatch):
+    class GraphStore:
+        async def list_entities(self):
+            return ["PostgreSQL", "Unified Memory"]
+
+        async def graph_neighborhood(self, entity, **kwargs):
+            return {
+                "nodes": [],
+                "links": [
+                    {
+                        "source": "Unified Memory",
+                        "target": "PostgreSQL",
+                        "predicate": "uses",
+                        "evidence_revision_id": "revision-1",
+                        "status": "explicit",
+                    }
+                ],
+            }
+
+    monkeypatch.setattr(api_main.app.state, "control_store", GraphStore(), raising=False)
+
+    entities = client.post("/entities")
+    relations = client.post("/relations", params={"entity": "Unified Memory"})
+
+    assert entities.json() == {"entities": ["PostgreSQL", "Unified Memory"]}
+    assert relations.json()["relations"][0]["evidence_revision_id"] == "revision-1"
