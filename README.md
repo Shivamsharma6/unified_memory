@@ -4,6 +4,7 @@ status: active
 aliases:
   - UAMS
   - Unified Memory
+  - Unified Agent Memory System
 tags:
   - "#uams"
   - "#architecture"
@@ -12,6 +13,8 @@ entities:
   - "[[Unified Agent Memory System]]"
   - "[[PostgreSQL]]"
   - "[[Qdrant]]"
+  - "[[Ollama]]"
+  - "[[Model Context Protocol]]"
 timestamps:
   created: 2026-06-10
   updated: 2026-08-11
@@ -19,222 +22,197 @@ timestamps:
 
 # Unified Agent Memory System
 
-**Unified Agent Memory System (UAMS)** is a local-first shared brain for AI agents. It gives tools like OpenClaw, Hermes, Claude Code, Codex, VoiceAI, and custom agents one durable memory layer for codebase knowledge, bug-fix history, procedures, decisions, and entity relationships.
+**Unified Agent Memory System (UAMS)** is a local-first shared memory for AI agents. Codex, Claude, Hermes, OpenClaw, VoiceAI, and custom agents can retrieve the same durable facts, decisions, procedures, profiles, entity relationships, and bug-fix history instead of relearning them independently.
 
-The goal is simple: when an agent fixes bug A today, every agent can retrieve what changed, why it changed, and how to avoid repeating the investigation tomorrow.
+The supported deployment runs on **one machine**. Human-readable Markdown is the source of truth; [[PostgreSQL]] and [[Qdrant]] make that truth fast, consistent, and searchable.
 
-## What It Does
+## What UAMS Guarantees
 
-- **Shared memory vault:** Human-readable Markdown notes with YAML frontmatter, Obsidian wikilinks, and strict agent-writing rules in `AGENTS.md`.
-- **Reconciled knowledge:** A watcher stages Markdown revisions in [[PostgreSQL]] and delivers semantic vectors to [[Qdrant]] through a durable outbox.
-- **Hybrid retrieval:** [[Qdrant]] supplies semantic candidates; [[PostgreSQL]] supplies exact/full-text matches, profiles, evidenced graph claims, and current-revision validation.
-- **Bug-fix recall:** Procedural memories and task notes make searches smaller and more accurate because past fixes become durable project knowledge.
-- **Agent SDK:** Python SDK and middleware for automatic pre-task memory injection and post-task memory distillation.
-- **One-command setup:** Cross-platform scripts (`Makefile`, `install.bat`) create the Python environment and install dependencies.
+- **One shared memory:** Every connected agent uses the same vault and retrieval API.
+- **Markdown authority:** The canonical record is Markdown with YAML frontmatter. It is readable in Obsidian, reviewable in Git, and recoverable without a database export.
+- **Transactional current state:** PostgreSQL owns document identity, revisions, current-versus-historical state, full-text search, profiles, graph evidence, jobs, and the vector outbox.
+- **Semantic recall:** Qdrant owns the rebuildable `memory_chunks_v2` vector projection used to find conceptually similar text.
+- **Safe revision activation:** A new Markdown revision does not become current until its complete vector projection is acknowledged. The previous active revision remains searchable if embedding or Qdrant delivery fails.
+- **Evidence-bearing results:** Normal retrieval returns `memory_id`, `revision_id`, source path, and chunk evidence and rejects superseded, archived, and deleted revisions.
+- **Local-by-default boundaries:** The API, PostgreSQL, and Qdrant bind to loopback addresses by default.
 
-## SOTA Intelligence Features
+The architectural contract is:
 
-UAMS goes beyond basic RAG with production-grade intelligence layers:
+> **Markdown is authoritative. PostgreSQL and Qdrant are rebuildable projections. PostgreSQL owns exact/current/lifecycle truth. Qdrant owns semantic similarity.**
 
-### LLM-Powered Distillation
-Memory summarization and lesson extraction use real LLM calls (Ollama/OpenAI) instead of keyword heuristics. Configure via environment variables:
-- `UAMS_LLM_PROVIDER` — `ollama` (default), `openai` (for cloud), or `mock`
-- `UAMS_LLM_MODEL` — main model name (default: `gemma4:12b-mlx`, or `gpt-4o`)
-- `UAMS_LLM_BASE_URL` — LLM endpoint (default: `http://localhost:11434`)
-- `UAMS_LLM_API_KEY` — API key for OpenAI-compatible providers
-- `UAMS_EMBED_PROVIDER` — `ollama`, `openai`, or `fastembed`
-- `UAMS_DISTILL_INTERVAL` — memory distillation frequency in file changes (default: `10`)
+Redis is not required because the durable PostgreSQL outbox already coordinates work on one machine. Neo4j is not required because current graph claims and evidence live in PostgreSQL. Multi-machine consensus, replication, and failover are outside the supported deployment.
 
-**Model Roles & Defaults:**
-- **Embedding:** `mxbai-embed-large:335m` (1024-dim, high quality)
-- **Reflection:** `gemma4:12b-mlx` (self-assessment and memory review via `/reflect`)
-- **Fallback:** `glm-4.7-flash:latest` (fast, cheap, highly available)
-- **Idle Timeout:** `300s` (optimizes memory lifecycle for large models)
+## Architecture at a Glance
 
-### Cross-Encoder Neural Reranking
-Retrieval results are reranked using `cross-encoder/ms-marco-MiniLM-L-6-v2` for more accurate relevance scoring. Falls back to heuristic word overlap if `sentence-transformers` is not installed.
+![UAMS single-machine architecture](docs/architecture/uams-single-machine.svg)
 
-### Identity Kernel
-A 12-domain identity system that extracts traits from episodic memories, tracks stability over time, detects contradictions, and injects personalized context into agent reasoning. Agents become consistent personalities, not stateless tools.
+The diagram separates host processes from Docker services and labels both read and write paths. The [editable draw.io source](docs/architecture/uams-single-machine.drawio) is committed beside the SVG.
 
-### Memory Quality Scoring
-Every memory note is scored on frontmatter completeness, link density, structural quality, and content length. Use `/memory/quality` to audit your vault.
+| Layer | Responsibility | Authority |
+| --- | --- | --- |
+| Markdown vault | Durable notes, metadata, wikilinks, relationships, and profiles | **Canonical** |
+| Watcher and reconciler | Detect changes, parse notes, create revisions, and converge derived state | Derived worker |
+| PostgreSQL 16 | Current revision pointer, raw revision copies, FTS, claims, profiles, jobs, audit, outbox | Exact and transactional projection |
+| Qdrant | Dense-vector search over semantic chunks in `memory_chunks_v2` | Semantic projection |
+| Ollama or configured embedding provider | Generate document and query vectors | Compute dependency |
+| FastAPI | Hybrid retrieval, writes, graph/profile access, readiness, and optional intelligence | Service boundary |
+| MCP and Python SDK | Give every agent a common task lifecycle | Integration boundary |
 
-### Self-Editing Memory
-Agents can correct, update, or delete their own memories via `/memory/edit`, `/memory/delete`, and `/memory/add-link` — with full audit trail in `Logs/memory_edits.md`.
+## Five-Minute Installation
 
-### Temporal Awareness
-Recent memories are automatically boosted in retrieval to prevent stale context from dominating. Exponential decay ensures today's work surfaces first.
+### Requirements
 
-### Semantic Procedure Matching
-Procedures are matched by embedding similarity, not just keyword overlap. The system tries neural reranking and falls back to keyword scoring.
+- macOS or Linux with a POSIX shell. macOS supervision uses `launchd`; Linux uses background processes and PID files.
+- Python 3.11 or newer.
+- Docker Desktop, OrbStack, or another Docker Engine with Compose v2.
+- Ollama for the default local embedding provider.
+- Enough disk space for Docker volumes, the embedding model, and the Markdown vault.
 
-## Architecture
+Windows helper scripts exist, but the macOS/Linux launcher is the verified path and supervision behavior is not yet at parity on Windows.
 
-```text
-Markdown Vault (authoritative)
-  AGENTS.md, Concepts/, Projects/, Tasks/, Daily/
-        |
-        v
-Reconciler + Semantic Chunker
-        |
-        +--> PostgreSQL control plane
-        |      revisions, FTS, profiles, claims, jobs, outbox
-        |
-        +--> Qdrant memory_chunks_v2
-               semantic vectors (derived projection)
-        |
-        v
-Hybrid Retrieval API --> Agent SDK / MCP
-```
+### Install the Default Local Stack
 
-Markdown is the only authoritative memory record. PostgreSQL and Qdrant are rebuildable projections. A revision becomes current only after its complete vector projection is acknowledged; normal retrieval rejects archived, deleted, and superseded revisions.
-
-## Quick Start
-
-Requirements:
-
-- Python 3.11+
-- Docker or OrbStack for PostgreSQL and Qdrant
-- macOS, Linux, or Windows
-
-Install:
+Start Docker and Ollama first, then run:
 
 ```bash
 git clone https://github.com/Shivamsharma6/unified_memory.git
 cd unified_memory
-make install      # Mac/Linux
-# or
-install.bat       # Windows
-```
-
-Start everything:
-
-```bash
-make start        # Mac/Linux
-# or
-uams.bat start    # Windows
-```
-
-Open the API docs:
-
-```text
-http://localhost:8000/docs
-```
-
-Reconcile and migrate the whole vault:
-
-```bash
-./uams migrate
-```
-
-Check status or stop services:
-
-```bash
-./uams status
-./uams stop
-./uams stop --infra  # explicitly stop PostgreSQL and Qdrant too
-```
-
-`./uams start` starts both databases, applies schema migrations, starts the watcher and API, and waits for deep readiness. Docker ports are bound to `127.0.0.1` by default:
-
-```text
-PostgreSQL: 127.0.0.1:5432
-Qdrant HTTP: http://127.0.0.1:6333
-Qdrant gRPC: 127.0.0.1:6334
-```
-
-Optional overrides live in `.env`:
-
-```bash
 cp .env.example .env
 ```
 
-The Qdrant default is pinned to an exact tested image digest, and PostgreSQL defaults to `postgres:16-bookworm`. Override them in `.env` only as a deliberate upgrade.
+Edit `.env` and replace `change-this-local-password` before PostgreSQL creates its named volume. Changing the variable later does **not** change a password already initialized inside the database.
 
-Run the MCP adapter for MCP-aware agents:
+The root `.env` is trusted, shell-compatible configuration. The `uams` launcher exports it to Compose, migrations, the API, and the watcher; do not place untrusted shell text in this file.
 
-```bash
-./uams mcp
-```
-
-Print ready-to-paste MCP registration snippets:
+Pull the default 1024-dimensional embedding model and install Python dependencies:
 
 ```bash
-./uams mcp-config all
+ollama pull mxbai-embed-large:335m
+./uams install
 ```
 
-Audit UAMS MCP registration for installed local agents without modifying their configuration:
+Create the database schema, reconcile the full vault, drain vector work, and audit readiness:
 
 ```bash
-./uams integrate
+./uams migrate --vault "$PWD"
 ```
 
-Check the local install:
+Then start the long-lived watcher and API:
+
+```bash
+./uams start
+```
+
+`migrate` and `start` both bring up PostgreSQL and Qdrant when Docker is available. `start` also applies the schema, launches the host processes, and waits up to 180 seconds for deep readiness.
+
+The default endpoints are:
+
+| Service | Address |
+| --- | --- |
+| FastAPI and Swagger UI | `http://127.0.0.1:8000/docs` |
+| PostgreSQL | `127.0.0.1:5432` |
+| Qdrant HTTP | `http://127.0.0.1:6333` |
+| Qdrant gRPC | `127.0.0.1:6334` |
+| Ollama | `http://127.0.0.1:11434` |
+
+## Verify the Installation
+
+Run all three operator checks:
 
 ```bash
 ./uams doctor
+./uams status
+curl -fsS http://127.0.0.1:8000/ready
 ```
 
-## Agent Integration
+`doctor` checks Python, the virtual environment, Docker, both containers, SDK/MCP packages, the MCP config generator, and API readiness. `status` reports the supervised host processes, container state, and the final readiness result.
 
-### MCP Server
+`GET /ready` is the authoritative serving check. A healthy response has:
 
-The UAMS MCP server exposes a **begin-then-end task lifecycle**: agents call `begin_task` before acting, then call `end_task` after durable work. This gives agents one obvious default memory habit instead of several optional tools.
+- `ready: true`;
+- `components.postgresql.status`, `components.qdrant.status`, and `components.embedding_search_probe.status` equal to `ok`;
+- zero pending or failed ingestion/outbox jobs;
+- `drift.total: 0` across Markdown, PostgreSQL revisions, Qdrant revision pairs, and Qdrant point IDs.
 
-**Protocol:**
+The reranker may report `mode: heuristic`; that is healthy when the optional `sentence-transformers` package is absent. `GET /health` is a shallower API/Qdrant check and does not replace `/ready`.
 
-1. **Begin** — Call `begin_task` with the user task.
-2. **Act** — Use the returned procedures and context as grounding before coding or answering.
-3. **Recall** — Use `search_memory` during work when more targeted recall is needed.
-4. **End** — After durable work, call `end_task` with distilled, non-transcript outcomes.
+If verification fails:
 
-**Available Tools:**
+1. Confirm Docker and Ollama are running.
+2. Confirm `ollama list` includes `mxbai-embed-large:335m`.
+3. Run `./uams status` and `./uams logs`.
+4. Read the complete `/ready` JSON for the failing component, queue, or drift counter.
+5. After correcting the cause, run `./uams migrate --vault "$PWD"` to reconcile and requeue exhausted vector commands.
 
-| Tool | Direction | Description |
-|------|-----------|-------------|
-| `begin_task` | Read | Default first call before work; retrieves procedures, compressed context, and memory policy. |
-| `end_task` | Write | Default final call after durable work; stores a distilled task outcome. |
-| `search_memory` | Read | Targeted hybrid semantic + graph search. |
-| `get_context` | Read | Lower-level context retrieval. |
-| `get_procedures` | Read | Lower-level procedure retrieval. |
-| `remember` | Write | Store distilled durable memory. |
-| `store_fix_summary` | Write | Store structured bug-fix knowledge. |
-| `get_related_entities` | Read | Traverse the knowledge graph. |
-| `summarize_memory` | Read | Summarize a topic. |
-| `health` | Read | Check UAMS API connectivity. |
+## Daily Operation
 
-**Codex Configuration:**
+### Command Reference
 
-Add the generated UAMS MCP block to `~/.codex/config.toml`:
+| Command | Effect |
+| --- | --- |
+| `./uams install` | Run `install.sh`, create `memory_watcher/.venv`, install watcher dependencies, and install the SDK editable. |
+| `./uams start` | Start PostgreSQL/Qdrant, apply schema, start watcher/API, and wait for deep readiness. |
+| `./uams stop` | Stop the watcher and API. PostgreSQL and Qdrant continue running. |
+| `./uams stop --infra` | Stop host processes and both containers. Named volumes are preserved. |
+| `./uams restart` | Stop and start the host processes; infrastructure is reused. |
+| `./uams status` | Report host-process, container, and readiness state. |
+| `./uams migrate --vault PATH` | Apply SQL migrations, scan Markdown, stage revisions, requeue failed vector commands, drain the outbox, and assess readiness. |
+| `./uams index` | Run the legacy direct Qdrant indexing helper. Prefer `migrate` for the current reconciled serving path. |
+| `./uams logs` | Tail the API and watcher log files. |
+| `./uams mcp` | Run the stdio MCP adapter connected to `UAMS_API_URL`. |
+| `./uams mcp-config all` | Print JSON and Codex TOML MCP registration snippets with the absolute launcher path. |
+| `./uams doctor` | Audit a local installation and readiness. |
+| `./uams integrate` | Audit known local MCP client configs without modifying them. |
 
-```toml
-[mcp_servers.uams]
-command = "/path/to/unified_memory/uams"
-args = ["mcp"]
-env = {UAMS_API_URL = "http://localhost:8000"}
-```
+Normal shutdown is intentionally cheap: `./uams stop` leaves both databases online. `./uams stop --infra` stops their containers but retains the `postgres_data` and `qdrant_storage` named volumes.
 
-Verify with:
+### Search from the Shell
 
 ```bash
-./uams mcp-config codex
+curl -fsS http://127.0.0.1:8000/search \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "query": "How was the login timeout regression fixed?",
+    "limit": 5,
+    "min_score": 0.0,
+    "compress": false
+  }'
 ```
 
-**Other Agents:**
+The default `min_score` is `0.7`. Use `0.0` during retrieval diagnosis so candidate generation can be inspected without the final threshold hiding results.
 
-Generate MCP config for other agents:
+### Store a Distilled Memory
+
+Agents should normally write through MCP `end_task`, `store_fix_summary`, or the REST write endpoint. A direct REST write is:
 
 ```bash
-./uams mcp-config json        # Claude Code / Cursor / Windsurf
-./uams mcp-config all          # All formats
-./uams integrate               # Audit local agent registrations without changes
+curl -fsS http://127.0.0.1:8000/remember \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "category": "procedural",
+    "source_agent": "custom-agent",
+    "project": "authentication",
+    "tags": ["#bugfix"],
+    "text": "# Session Refresh Fix\n\n## Cause\nA stale refresh token was reused.\n\n## Resolution\nRotate the token atomically and invalidate the prior session.\n\n## Entities\n[[Authentication Service]] fixes [[Login Timeout Regression]]."
+  }'
 ```
 
+The API atomically writes Markdown first, then attempts immediate reconciliation. `status: success` means the durable Markdown write succeeded. Check `indexed`, `warning`, and `/ready` before assuming the new revision is searchable.
 
-### MCP Adapter
+## Connect Every Agent
 
-The recommended default integration is MCP. Configure the agent to launch UAMS over stdio:
+MCP is the recommended integration boundary because clients can discover the task protocol, tools, resource, and prompt without importing Python code.
+
+### Generate and Audit MCP Configuration
+
+```bash
+./uams mcp-config all
+./uams integrate
+```
+
+`mcp-config` prints configuration only; it does not edit client files. `integrate` audits Claude Desktop, Claude Code, OpenClaw, Hermes, and Codex registrations without mutating them. After changing a client configuration, restart or reload that client.
+
+A JSON-based client uses:
 
 ```json
 {
@@ -250,244 +228,537 @@ The recommended default integration is MCP. Configure the agent to launch UAMS o
 }
 ```
 
-Generate this snippet with:
+Codex uses TOML:
 
-```bash
-./uams mcp-config json
+```toml
+[mcp_servers.uams]
+command = "/absolute/path/to/unified_memory/uams"
+args = ["mcp"]
+env = {UAMS_API_URL = "http://localhost:8000"}
 ```
 
-For Codex, generate TOML for `~/.codex/config.toml`:
+Always generate these snippets locally so `command` contains the real absolute repository path.
 
-```bash
-./uams mcp-config codex
-```
-
-Once connected, agents discover these tools automatically:
-
-- `begin_task`: default first call before work; retrieves procedures, context, and memory policy.
-- `end_task`: default final call after durable work; stores distilled task outcomes.
-- `search_memory`: targeted hybrid semantic + graph search.
-- `get_context`: lower-level compressed task context retrieval.
-- `get_procedures`: lower-level procedure retrieval.
-- `remember`: store distilled durable memory.
-- `store_fix_summary`: store structured bug-fix knowledge.
-- `get_related_entities`: traverse the knowledge graph.
-- `summarize_memory`: summarize a topic.
-- `health`: check UAMS API connectivity.
-
-The MCP server also exposes:
-
-- `uams://memory-policy`: default memory operating policy.
-- `use_uams_memory`: prompt template that makes the agent call `begin_task` before acting and `end_task` after durable outcomes.
-
-For best results, set the agent’s system/developer instructions to treat UAMS as mandatory memory:
+### Default Agent Lifecycle
 
 ```text
-Before each non-trivial task, call UAMS `begin_task`.
-During work, call UAMS `search_memory` when more recall is needed.
-After durable work, call UAMS `end_task`.
-Do not store raw transcripts; store distilled atomic knowledge only.
+begin_task -> act / search_memory -> end_task
 ```
 
-Start the API/watch service first:
+1. Call `begin_task` before non-trivial work to load procedures, compressed context, and the memory policy.
+2. Call `search_memory` during work when targeted recall is needed.
+3. Call `end_task` after durable work with distilled outcomes, decisions, files, fixes, and entities.
+4. Never store raw transcripts, pleasantries, secrets, or speculative claims as facts.
 
-```bash
-./uams start
-```
+### MCP Capabilities
 
-MCP registration is **per agent/client**. There is no universal machine-wide registry that every agent reads. Production setups should either:
+| Tool | Purpose |
+| --- | --- |
+| `health` | Check API reachability and shallow component health. |
+| `begin_task` | Retrieve procedures, context, and the default memory policy. |
+| `search_memory` | Run hybrid semantic/lexical retrieval with optional entities and compression. |
+| `get_context` | Build a token-bounded context block for a task. |
+| `get_procedures` | Retrieve task-relevant operating rules. |
+| `remember` | Store a distilled atomic memory. |
+| `end_task` | Store a structured task-outcome memory. |
+| `store_fix_summary` | Store issue, cause, resolution, affected files, and linked entities as procedural memory. |
+| `get_related_entities` | Retrieve an evidence-backed graph neighborhood. |
+| `summarize_memory` | Retrieve context and generate an optional LLM summary. |
+| `get_identity` | Read an optional identity-kernel profile. |
+| `inject_identity` | Produce optional identity context for reasoning. |
+| `extract_identity` | Extract optional identity traits from supplied episodic memories. |
+| `memory_quality` | Score the structure and metadata of a Markdown note. |
 
-- commit a project-level MCP config where the client supports it,
-- add the generated snippet to the user-level agent config,
-- or wrap the agent launcher so it starts with the UAMS MCP server enabled.
+The server also exposes:
 
-Python agents can use the SDK directly:
+- resource `uams://memory-policy`, containing the default read-before-work/write-after-work policy;
+- prompt `use_uams_memory`, which renders that protocol for a specific task.
+
+Identity tools are an optional file-backed intelligence subsystem. They are distinct from exact PostgreSQL profiles described later.
+
+### Python SDK
+
+`./uams install` installs `uams_sdk` into the project environment. A custom Python agent can use the asynchronous client directly:
 
 ```python
 import asyncio
+
 from uams_sdk import UAMSClient
 
-async def main():
-    client = UAMSClient("http://localhost:8000")
 
-    context = await client.retrieve_context("Fix the login timeout regression")
-    print(context)
+async def main() -> None:
+    client = UAMSClient(base_url="http://127.0.0.1:8000")
+    task = "Fix intermittent session refresh failures"
 
-    await client.store_memory(
-        "Resolved [[Login Timeout Regression]] by increasing the session refresh grace window.",
-        category="procedural",
-        tags=["#bugfix", "#auth"],
+    preflight = await client.begin_task(task, max_tokens=2000)
+    print(preflight["procedures"])
+    print(preflight["context"])
+
+    recall = await client.search(
+        "previous refresh-token fixes",
+        limit=5,
+        entities=["Authentication Service"],
+        compress=True,
     )
+    print(recall["results"])
+
+    await client.end_task(
+        task=task,
+        outcome="Made refresh-token rotation atomic and added regression coverage.",
+        files=["auth/session.py", "tests/test_session.py"],
+        decisions=["Keep token invalidation in the same transaction."],
+        fixes=["Prevent reuse of the superseded refresh token."],
+        entities=["Authentication Service", "Session Refresh Fix"],
+        tags=["#bugfix"],
+        category="procedural",
+    )
+
 
 asyncio.run(main())
 ```
 
-Middleware can automatically:
+REST is the lowest-level integration option. Its exact routes are listed in [API Reference](#api-reference).
 
-- retrieve procedures before the agent starts work,
-- inject compressed historical context into the prompt,
-- extract durable insights after the task,
-- store distilled memories back into the vault.
+## How the Architecture Works
 
-See [uams_sdk/README.md](uams_sdk/README.md) and [memory_watcher/integrations/openclaw](memory_watcher/integrations/openclaw) for examples.
+### Component Boundaries
 
-## Memory Model
+The supported topology deliberately uses different stores for different access patterns:
 
-UAMS supports **7 application memory categories**. Current semantic chunks share one Qdrant collection, `memory_chunks_v2`; `memory_type` remains an indexed payload/filter and PostgreSQL column.
+- **Markdown** preserves the human-meaningful record and survives a complete loss of both databases.
+- **PostgreSQL** enforces revision lifecycle and answers exact, relational, full-text, graph, profile, audit, and queue questions transactionally.
+- **Qdrant** efficiently answers “what text means something similar to this query?” It is not asked to decide which revision is current.
+- **Ollama** produces embeddings locally by default. Optional LLM endpoints also use Ollama unless configured for an OpenAI-compatible provider.
+- **FastAPI** fuses candidates and applies lifecycle validation before returning evidence to an agent.
 
-| Category | Purpose |
-|----------|---------|
-| `semantic` | Facts, concepts, domain knowledge |
-| `episodic` | Experiences, events, interactions |
-| `procedural` | How-to knowledge, workflows, procedures |
-| `identity` | Stable personality traits and preferences |
-| `goal` | Ongoing objectives and project states |
-| `reflection` | Self-analysis, lessons learned, patterns |
-| `relationship` | Person-specific dynamics and communication styles |
+This split keeps Qdrant because semantic similarity is its strength. Replacing it with PostgreSQL-only retrieval would lose dense-vector recall; using Qdrant alone would make exact profiles, current-revision truth, and durable job coordination weaker.
 
-### Episodic Memory Schema
+### Write Path
 
-Episodic memories store **experiences**, not raw transcripts. Each record captures:
+Every managed write converges through this sequence:
 
-- **Emotional state**: frustration, excitement, confidence, stress, satisfaction (0.0–1.0)
-- **Context**: platform, location, tools used, session ID
-- **Outcome**: success flag, resolution, consequences, lessons learned
-- **Importance**: weighted score (0.0–1.0) determining long-term survival
-- **Relationships**: linked memory IDs, participants, source agent
+1. A human or agent atomically creates or changes a Markdown file.
+2. The watcher debounces filesystem events; startup and periodic reconciliation also scan the vault so missed events are recoverable.
+3. The reconciler validates frontmatter, derives a stable `memory_id`, chunks by structure, and extracts entities, mentions, explicit claims, and structured profile facts.
+4. One PostgreSQL transaction inserts a **staged** revision, chunks, evidence rows, ingestion job, audit event, and `upsert_revision` outbox command.
+5. The vector worker claims outbox work, asks the embedding provider for every chunk vector, and idempotently upserts the revision into Qdrant.
+6. Only after Qdrant acknowledges the write does PostgreSQL atomically mark the new revision active and update `documents.current_revision_id`.
+7. Any previous active revision becomes superseded and a follow-up outbox command removes its old Qdrant points.
 
-```python
-from memory_watcher.memory_types import (
-    EpisodicMemory, EmotionalState, ContextData, OutcomeData,
-)
-
-mem = EpisodicMemory(
-    event_type="decision",
-    summary="Chose Qdrant over Pinecone for vector storage",
-    participants=["Shivam", "Hermes"],
-    emotional_state=EmotionalState(excitement=0.8, confidence=0.9),
-    importance=0.85,
-    context=ContextData(platform="cli", tools_used=["qdrant"]),
-    outcome=OutcomeData(success=True, lessons_learned=["Qdrant has better local support"]),
-    source="hermes",
-)
+```mermaid
+stateDiagram-v2
+    [*] --> Discovered
+    Discovered --> ReconcileFailed: invalid Markdown or PostgreSQL error
+    ReconcileFailed --> Discovered: correct file and reconcile
+    Discovered --> Staged: PostgreSQL transaction commits
+    Staged --> VectorPending: durable outbox command
+    VectorPending --> VectorRetry: embedding or Qdrant error
+    VectorRetry --> VectorPending: exponential retry
+    VectorRetry --> VectorFailed: retry budget exhausted
+    VectorFailed --> VectorPending: explicit migrate requeue
+    VectorPending --> Active: Qdrant upsert acknowledged
+    Active --> Superseded: newer revision acknowledged
+    Active --> Archived: file or status archived
+    Active --> Deleted: file removed
 ```
 
-### Memory Ingestion Pipeline
+`ReconcileFailed`, `Staged`, `VectorRetry`, and `VectorFailed` are never served as the new current revision. If an older active revision exists, it remains current. An archive or delete changes document visibility in PostgreSQL and queues idempotent vector cleanup.
 
-Every meaningful interaction flows through a 6-stage pipeline:
+### Failure Invariants
 
+| Failure | Result | Recovery |
+| --- | --- | --- |
+| PostgreSQL unavailable | Markdown remains durable; reconciliation fails and `/ready` is false. Do not rely on the legacy degraded path for current-revision guarantees. | Restore PostgreSQL, then run `./uams migrate --vault "$PWD"`. |
+| Ollama/model unavailable | The revision remains staged; the old current revision is unchanged. | Start Ollama, pull the configured model, and migrate/retry. |
+| Qdrant unavailable | Vector outbox work retries with exponential delay, then becomes explicitly failed after eight attempts. | Restore Qdrant and run `migrate` to requeue exhausted work. |
+| Malformed Markdown | No valid new revision is staged; the error appears in readiness drift and failure jobs. | Correct frontmatter or the invalid UUID, then reconcile. |
+| Watcher misses an event | Startup and five-minute periodic scans converge the projection. | Run `migrate` for immediate convergence. |
+| Process crash during vector work | The claimed outbox row becomes reclaimable after its lock ages out. | Restart UAMS; processing is idempotent. |
+
+### Read Path
+
+A normal `POST /search` performs the following work:
+
+1. Normalize the request and infer a broad intent such as semantic or procedural.
+2. Start PostgreSQL full-text search, verified graph expansion, and profile-evidence lookup.
+3. Embed the query and ask Qdrant for semantic candidates from `memory_chunks_v2`.
+4. Fuse lexical and semantic ranks with reciprocal-rank fusion and bounded relevance weights.
+5. Ask PostgreSQL for the valid `(memory_id, revision_id)` pairs and remove stale, archived, deleted, or superseded candidates.
+6. Add bounded graph, profile, and recency boosts.
+7. Rerank using the cross-encoder when installed or the deterministic heuristic fallback.
+8. Apply `min_score`, limit the result count, and optionally compress the context to the token budget.
+
+Every returned result identifies its source channels in `rank_sources` and supplies `evidence_ids`. Set `include_historical: true` only for explicit audit or history workflows; the default is current memory only.
+
+## Authoritative Memory Format
+
+The complete authoring protocol lives in [AGENTS.md](AGENTS.md). The core rules are: distill rather than transcribe, keep one reusable concept per note, include YAML frontmatter, use one H1, split content with short H2/H3 sections, and connect important entities with wikilinks.
+
+### Managed Note Example
+
+```markdown
+---
+memory_id: 11111111-1111-4111-8111-111111111111
+type: procedural
+status: active
+aliases:
+  - Session Refresh Fix
+tags:
+  - "#bugfix"
+entities:
+  - "[[Authentication Service]]"
+timestamps:
+  created: 2026-08-11T00:00:00Z
+  updated: 2026-08-11T00:00:00Z
+relationships:
+  - predicate: fixes
+    target: "[[Login Timeout Regression]]"
+    status: explicit
+---
+
+# Rotate Refresh Tokens Atomically
+
+## Cause
+
+The [[Authentication Service]] reused a refresh token after another request had already rotated it.
+
+## Resolution
+
+Rotate the token and invalidate the previous session in one database transaction.
+
+## Verification
+
+- Exercise two simultaneous refresh requests.
+- Confirm only one replacement token remains valid.
 ```
-Conversation → Summarization → Emotion extraction →
-Importance scoring → Memory classification → Storage
+
+Keep `memory_id` stable when renaming or moving an established note. If it is omitted, UAMS deterministically derives an ID from the vault-relative path; a later move would therefore look like a different memory. `./uams migrate --write-memory-ids --vault "$PWD"` can explicitly add IDs to legacy notes and should be reviewed as a vault-changing operation.
+
+Wikilinks create entity mentions. Strict graph edges come from `relationships` or `related_to`; prose is not silently promoted into authoritative triples. Use `status: candidate` for a relationship that should be inspectable but excluded from default graph traversal.
+
+### Memory Types and Placement
+
+| Type | Typical directory | Purpose |
+| --- | --- | --- |
+| `episodic` | `Daily/` or `Tasks/` | A dated event or completed task outcome. |
+| `semantic` | `Concepts/`, `Projects/`, `People/`, or `Agents/` | A durable fact, entity, architecture, or project state. |
+| `procedural` | `Procedures/` or `Tasks/` | A repeatable workflow, runbook, or bug-fix procedure. |
+
+Move completed material to `Archive/` or set `status: archived`; do not delete valuable history merely to remove it from normal retrieval.
+
+## Retrieval Model
+
+UAMS deliberately combines complementary retrieval modes:
+
+| Mode | Backing store | Best for |
+| --- | --- | --- |
+| Semantic similarity | Qdrant | Paraphrases, related concepts, symptoms described with different vocabulary. |
+| Full-text/lexical | PostgreSQL | Error strings, filenames, identifiers, exact phrases, and keyword-heavy fixes. |
+| Exact lifecycle | PostgreSQL | Current revision, archive/delete state, source evidence, ingestion status. |
+| Exact profiles | PostgreSQL | Agent, user, or project facts with keys and evidence. |
+| Knowledge graph | PostgreSQL | Authored entity relationships and bounded neighborhood expansion. |
+
+This is why Qdrant remains part of the architecture: it supplies recall that exact matching cannot. PostgreSQL then prevents semantic candidates from becoming ungrounded or historically stale.
+
+### Filters and Result Evidence
+
+`POST /search` accepts `memory_types`, `projects`, `source_agents`, explicit `entities`, `limit`, `min_score`, `compress`, `max_tokens`, and `include_historical`. Qdrant applies type/project/agent payload filters; PostgreSQL applies the corresponding lexical and lifecycle rules.
+
+A result includes:
+
+- `memory_id` and `revision_id` for lifecycle validation;
+- `chunk_id` and `source_file` for traceability;
+- `memory_type`, entity keys, rank sources, and final score;
+- `evidence_ids` in `memory_id:revision_id:chunk_id` form.
+
+The retrieval quality gate in `make evaluate` requires hit@1 of at least 80%, hit@5 of at least 90%, and zero historical-revision leaks against the committed golden queries. Extend the fixture when adding real failure modes; aggregate quality is not a substitute for domain-specific evaluation.
+
+## Knowledge Graph and Profiles
+
+### Evidence-Backed Graph
+
+The current serving graph is relational, not a separate Neo4j requirement. PostgreSQL stores normalized entities, aliases, mentions, claims, confidence, status, and the exact Markdown revision that supplied the evidence.
+
+Default graph queries include only `explicit` or `verified` claims whose evidence revision is current and whose document is active. Candidate and historical claims require explicit query flags. Neighborhood radius is capped at five hops.
+
+```bash
+curl -fsS 'http://127.0.0.1:8000/graph/neighborhood/Authentication%20Service?radius=2'
+curl -fsS 'http://127.0.0.1:8000/graph/export'
 ```
 
-The pipeline auto-classifies content into the appropriate memory type and creates structured records with emotional metadata and importance scores.
+The graph is accurate to **authored evidence**, not to every relationship implied by prose. Its quality depends on consistent canonical names, aliases, wikilinks, and explicit predicates. Use it to expand and explain retrieval, not as an autonomous ontology reasoner.
 
-### Importance Scoring
+### Exact Agent, User, and Project Profiles
 
-Memories are scored on a 0.0–1.0 scale using:
+Files directly under `Agents/`, `People/`, or `Projects/` become exact profiles only when their frontmatter contains a `profile_facts` mapping. For example, `People/Shivam Sharma.md` can contain:
 
+```markdown
+---
+memory_id: 22222222-2222-4222-8222-222222222222
+type: person
+status: active
+aliases:
+  - Shivam
+tags:
+  - "#profile"
+entities:
+  - "[[Shivam Sharma]]"
+timestamps:
+  created: 2026-08-11T00:00:00Z
+  updated: 2026-08-11T00:00:00Z
+profile_facts:
+  preferred_database: PostgreSQL
+  timezone: Asia/Kolkata
+  deployment_shape: single-machine
+---
+
+# Shivam Sharma
+
+## Memory Profile
+
+[[Shivam Sharma]] operates the [[Unified Agent Memory System]].
 ```
-importance = emotional_weight * 0.3 + novelty * 0.2 + goal_relevance * 0.3 + repetition * 0.2
+
+After reconciliation, retrieve by profile UUID or canonical display key:
+
+```bash
+curl -fsS 'http://127.0.0.1:8000/profiles/Shivam%20Sharma'
 ```
 
-- **Emotional weight**: average intensity of all emotion dimensions
-- **Novelty**: ratio of unique/rare words to common words
-- **Goal relevance**: proximity to stated objectives and priorities
-- **Repetition**: how often the topic has been mentioned
+Each returned fact carries its evidence memory, evidence revision, source file, status, and validity timestamps. Narrative prose can still appear in semantic search, but it does not become an exact profile fact unless authored in `profile_facts`.
 
-Category-specific thresholds determine which memories survive consolidation (e.g., episodic: 0.3, reflection: 0.4).
+## Operations, Backup, and Recovery
 
-### Memory Consolidation
+### Runtime Supervision and Persistence
 
-Periodic consolidation jobs compress raw memories into stable knowledge:
+On macOS, the launcher submits `com.uams.api` and `com.uams.watcher` jobs to the current GUI `launchd` domain and writes logs under `memory_watcher/`. On Linux, it uses `nohup` plus PID files in `memory_watcher/.pids/`.
 
+Compose stores PostgreSQL and Qdrant data in named volumes. Container recreation and `./uams stop --infra` preserve them. `docker compose down -v`, manual volume deletion, or changing Compose project identity can remove or orphan derived state and should not be part of routine operation.
+
+### Backup Priorities
+
+Back up in this order:
+
+1. **Markdown and Git:** Commit or copy the vault, including `AGENTS.md` and all managed memory directories. This is the only backup required to reconstruct knowledge.
+2. **Configuration:** Back up a protected copy of `.env` separately from Git. It may contain passwords or API keys.
+3. **PostgreSQL:** Optionally take a `pg_dump` to shorten recovery and retain operational audit/job history.
+4. **Qdrant:** Optionally create and download a snapshot of `memory_chunks_v2` to avoid re-embedding a large vault.
+
+Database snapshots are acceleration artifacts, not a replacement for Markdown. Coordinate PostgreSQL and Qdrant snapshots if you need an exact point-in-time operational image; otherwise expect reconciliation to correct their projections from the vault.
+
+### Reconcile or Rebuild
+
+For ordinary drift or an outage recovery, do not delete data. Run:
+
+```bash
+./uams migrate --vault "$PWD"
+./uams start
+curl -fsS http://127.0.0.1:8000/ready
 ```
-Raw memories → Cluster similar → Summarize patterns →
-Create abstractions → Reduce redundancy
-```
 
-Example: 50 conversations about optimization → *"User consistently prioritizes system efficiency over simplicity."*
+`migrate` applies idempotent SQL migrations, scans every managed Markdown file, marks missing documents deleted, requeues failed vector commands, drains available work, and reports readiness.
 
-The `MemoryConsolidator` provides:
+For disaster recovery onto a clean machine:
 
-- `consolidate()`: full consolidation pipeline with statistics
-- `get_low_value_memories()`: retrieve memories below importance threshold
-- `promote_to_concept()`: convert episodic clusters into semantic concepts
+1. Restore or clone the authoritative Markdown/Git repository.
+2. Restore `.env` securely and start Docker and Ollama.
+3. Run `./uams install` and pull the configured embedding model.
+4. Start with new empty PostgreSQL and Qdrant volumes, then run `./uams migrate --vault "$PWD"`.
+5. Start host services and require `/ready` with zero drift before reconnecting agents.
 
-UAMS stores knowledge as atomic Markdown notes:
+Do not delete damaged volumes until the Markdown backup is verified and a clean rebuild succeeds.
 
-- `Concepts/`: stable facts, architecture, domain concepts.
-- `Projects/`: active or archived project-level memory.
-- `Tasks/`: reusable procedures, debugging playbooks, and coding directives.
-- `Daily/`: short-term episodic notes that can later be promoted.
-- `People/`, `Research/`, `Logs/`, `AI/`: supporting vault areas.
+### Model and Schema Upgrades
 
-Every durable memory should include:
+The Qdrant collection dimension must equal `UAMS_EMBED_DIMENSION`. Changing the embedding model or dimension is a projection migration, not a live environment tweak. Use a deliberate new collection/projection version or rebuild the collection from Markdown; never point 1536-dimensional embeddings at the default 1024-dimensional collection.
 
-- YAML frontmatter with `type`, tags, aliases/entities, and timestamps where relevant.
-- Wikilinks for important entities, such as `[[OpenClaw]]` or `[[Qdrant]]`.
-- Short sections with `##` and `###` headers so retrieval chunks stay focused.
+Upgrade PostgreSQL/Qdrant images deliberately, back up first, run Compose validation and migrations, and verify `/ready` plus the retrieval evaluation before removing the rollback path. The Qdrant default is digest-pinned; PostgreSQL defaults to `postgres:16-bookworm`.
 
-The full write protocol lives in [AGENTS.md](AGENTS.md).
+## Configuration Reference
 
-## API Surface
+The launcher loads repository-root `.env` before every command. Values shown below are code defaults unless `.env.example` deliberately supplies a safer first-install value.
 
-- `POST /search`: semantic and graph-aware retrieval.
-- `POST /context`: compressed context block for agent prompts.
-- `POST /remember`: direct agent write path.
-- `POST /procedures`: procedure retrieval for coding and operational tasks.
-- `GET /graph/neighborhood/{entity}`: graph neighborhood lookup.
-- `GET /profiles/{profile_id}`: exact current profile facts with evidence.
-- `GET /memory/status/{memory_id}`: revision and projection lifecycle.
-- `GET /health`: API health check.
-- `GET /ready`: deep database, embedding/search, queue, and drift readiness.
+### Runtime and Watcher
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `UAMS_VAULT_PATH` | Repository root | Markdown root watched and reconciled. Use the repository root for the fully supported write/edit path. |
+| `UAMS_API_HOST` | `127.0.0.1` | Uvicorn bind address. |
+| `UAMS_API_PORT` | `8000` | Uvicorn port. Non-default ports have the tooling limitation noted below. |
+| `UAMS_API_URL` | `http://localhost:8000` | Runtime SDK/MCP API base URL; keep aligned with host and port. |
+| `UAMS_READY_ATTEMPTS` | `180` | One-second readiness attempts during `start`. |
+| `UAMS_RECONCILE_INTERVAL` | `300` | Seconds between full watcher scans. |
+| `UAMS_RECONCILE_EVENT_RETRIES` | `3` | Filesystem-event reconciliation retries. |
+| `UAMS_DISTILL_INTERVAL` | `10` | Successful file events between optional distillation cycles. |
+
+### PostgreSQL
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `UAMS_POSTGRES_HOST` | `127.0.0.1` | PostgreSQL host and Compose bind address. |
+| `UAMS_POSTGRES_PORT` | `5432` | PostgreSQL port. |
+| `UAMS_POSTGRES_DB` | `uams` | Database name. |
+| `UAMS_POSTGRES_USER` | `uams` | Database role. |
+| `UAMS_POSTGRES_PASSWORD` | `uams-local-only`; `.env.example` requires replacement | **Secret.** Initial database password and application credential. |
+| `UAMS_POSTGRES_POOL_MIN` | `1` | Minimum async connection-pool size. |
+| `UAMS_POSTGRES_POOL_MAX` | `10` | Maximum async connection-pool size. |
+| `UAMS_POSTGRES_CONNECT_TIMEOUT` | `5` | Connection timeout in seconds. |
+| `POSTGRES_IMAGE` | `postgres:16-bookworm` | Compose image override. |
+
+### Qdrant and Embeddings
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `QDRANT_HOST` | `127.0.0.1` | Qdrant host and HTTP/gRPC bind address. |
+| `QDRANT_HTTP_PORT` | `6333` | REST/client port. |
+| `QDRANT_GRPC_PORT` | `6334` | Exposed gRPC port. |
+| `QDRANT_IMAGE` | Digest-pinned Qdrant image in `.env.example` | Deliberate container upgrade override. |
+| `UAMS_EMBED_PROVIDER` | `ollama` | `ollama`, `openai`, `fastembed`, or `fake` for tests. |
+| `UAMS_EMBED_MODEL` | `mxbai-embed-large:335m` | Document and query embedding model. |
+| `UAMS_EMBED_DIMENSION` | `1024` | Qdrant vector size; must match model output. |
+| `UAMS_EMBED_API_KEY` | Unset | **Secret.** Required for OpenAI embeddings. |
+
+### Optional LLM Features
+
+These settings affect summarization, reflection, identity extraction, and distillation. Core reconciliation and search need embeddings but do not require the configured generative LLM model.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `UAMS_LLM_PROVIDER` | `ollama` | `ollama`, `openai`, or `mock`. |
+| `UAMS_LLM_BASE_URL` | `http://localhost:11434` | Ollama base URL. The current `openai` adapter uses the official OpenAI endpoint directly. |
+| `UAMS_LLM_MODEL` | `gemma4:12b-mlx` | Generative model for optional intelligence calls. |
+| `UAMS_LLM_API_KEY` | Unset | **Secret.** Cloud-provider API credential. |
+
+If `UAMS_API_PORT` changes, update `UAMS_API_URL` in the same `.env`. Never commit `.env`, database dumps, Qdrant snapshots, or API keys.
+
+## API Reference
+
+Interactive OpenAPI documentation is available at `http://127.0.0.1:8000/docs` while the API is running.
+
+### Retrieval, Ingestion, and Orchestration
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `POST` | `/search` | Hybrid current-revision search with filters, evidence, reranking, and compression. |
+| `POST` | `/remember` | Atomically create Markdown and attempt reconciliation. |
+| `POST` | `/context` | Assemble token-bounded memory context for a task. |
+| `POST` | `/procedures` | Retrieve relevant rules from procedural Markdown such as `AGENTS.md`. |
+| `POST` | `/summarize` | Search and generate an optional LLM summary. |
+
+### Graph and Exact Profiles
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `POST` | `/entities` | List entities evidenced by active current memories. |
+| `POST` | `/relations?entity=NAME` | Return current one-hop relations for an entity. |
+| `GET` | `/graph/neighborhood/{entity}` | Retrieve an evidence-backed neighborhood; supports radius and candidate/history flags. |
+| `GET` | `/graph/export` | Export current claim graph; optionally include candidates/history. |
+| `GET` | `/profiles/{profile_id}` | Get exact current profile facts by UUID or canonical key. |
+
+### Memory Management and Quality
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `GET` | `/memory/status/{memory_id}` | Inspect document, revision, ingestion-job, and outbox state. |
+| `POST` | `/memory/edit` | Atomically replace one text occurrence and create a local backup/audit entry. |
+| `POST` | `/memory/delete` | Move a note to `Archive/` and audit the action. |
+| `POST` | `/memory/add-link` | Add a wikilink to a note. |
+| `POST` | `/memory/quality` | Score one note or supplied Markdown. |
+| `POST` | `/memory/quality/batch` | Score a list of note paths. |
+
+### Optional Identity and Intelligence
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `POST` | `/identity/profile` | Read a file-backed identity-kernel profile. |
+| `POST` | `/identity/extract` | Extract identity traits from caller-supplied memories. |
+| `POST` | `/identity/inject` | Return structured identity context. |
+| `POST` | `/identity/inject-text` | Return identity context as text. |
+| `POST` | `/identity/stability` | Recalculate identity trait stability. |
+| `POST` | `/identity/contradictions` | Report contradictory identity traits. |
+| `POST` | `/identity/entities` | List identity-kernel entities. |
+| `POST` | `/reflect` | Run optional LLM reflection over recent daily memories. |
+
+### System
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `GET` | `/health` | Shallow API, Qdrant, and embedding-configuration health. |
+| `GET` | `/ready` | Deep PostgreSQL/Qdrant/probe/queue/drift serving gate. |
+| `GET` | `/llm-status` | Report lazy LLM client state and idle shutdown timing. |
+
+No API authentication is implemented. Keep these routes on loopback or put an authenticated reverse proxy and network policy in front of them before any remote exposure.
 
 ## Repository Layout
 
-```text
-.
-├── AGENTS.md                  # Memory-writing protocol for agents
-├── install.sh                 # One-command local installer
-├── uams                       # Service control: start, migrate, status, logs, mcp
-├── memory_watcher/            # Reconciler, PostgreSQL control plane, Qdrant projection, API
-├── uams_sdk/                  # Python SDK, MCP server, and agent middleware
-├── Concepts/ Projects/ Tasks/ # Canonical memory vault
-└── AI/                        # Legacy/derived embedding and cache areas
+| Path | Purpose |
+| --- | --- |
+| [AGENTS.md](AGENTS.md) | Mandatory authoring, linking, chunking, and aging protocol for all agents. |
+| [`uams`](uams) | Main macOS/Linux installation, lifecycle, migration, MCP, and diagnostic launcher. |
+| [`.env.example`](.env.example) | Copyable local configuration template. |
+| [`memory_watcher/`](memory_watcher/) | FastAPI service, watcher, reconciler, PostgreSQL/Qdrant stores, migrations, and tests. |
+| [`memory_watcher/storage/migrations/`](memory_watcher/storage/migrations/) | Idempotent PostgreSQL control-plane schema. |
+| [`uams_sdk/`](uams_sdk/) | Async Python client, middleware, MCP adapter, and SDK examples. |
+| [`docs/architecture/`](docs/architecture/) | Editable and rendered architecture diagrams. |
+| `Agents/`, `People/`, `Projects/` | Entity/profile memory; structured facts become exact PostgreSQL profiles. |
+| `Concepts/`, `Procedures/`, `Tasks/`, `Daily/` | Semantic, procedural, and episodic authoritative memory. |
+| `Archive/` | Retained history excluded from normal retrieval. |
+| `.uams/` | Generated local backups and evaluation reports; not authoritative memory. |
+
+## Development and Release Gates
+
+Create the environment first with `./uams install`. The primary checks are:
+
+```bash
+bash -n uams install.sh
+docker compose -f memory_watcher/docker-compose.yml config --quiet
+memory_watcher/.venv/bin/python -m pip check
+memory_watcher/.venv/bin/python -m pytest \
+  memory_watcher/tests memory_watcher/api/tests tests uams_sdk/tests -q
+make test-integration
+UAMS_VAULT_PATH="$PWD" make evaluate
 ```
 
-## Open Source Roadmap
+`make test-integration` exercises real PostgreSQL/Qdrant projection lifecycle behavior and therefore requires the containers. `make evaluate` enforces hit@1 ≥ 80%, hit@5 ≥ 90%, and zero historical leaks.
 
-- Package the API and watcher as installable Python console commands.
-- Add more templates for Claude Code, Codex, OpenClaw, Hermes, and LangChain-style agents.
-- Replace heuristic post-task distillation with configurable local or hosted LLM distillers.
-- Add first-class repository scanners for code symbols, commits, PRs, and issue history.
-- Publish Docker Compose profiles for local-only, team, and production setups.
+Before release or a database/model upgrade also require:
 
-## Public Release
+```bash
+./uams doctor
+curl -fsS http://127.0.0.1:8000/ready
+git diff --check
+```
 
-Before publishing, run through [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) and review [SECURITY.md](SECURITY.md). The default deployment is local-first and does not include public API authentication.
+Add a regression test before changing lifecycle, retrieval, or launcher behavior. Add representative golden queries when a fixed failure mode should remain retrievable.
+
+## Security and Current Limitations
+
+- **Single-machine only:** UAMS does not implement multi-node leader election, replicated queues, or cross-host consistency.
+- **No API authentication:** Loopback binding is the security boundary in the default deployment. Do not bind to `0.0.0.0` on an untrusted network.
+- **Trusted local writers:** Anyone who can change the vault can change shared agent memory. Use filesystem permissions, Git review, and backups.
+- **Trusted `.env`:** The launcher sources it as shell-compatible configuration. Protect it and never populate it from untrusted input.
+- **Secrets are not memory:** Do not store credentials, tokens, private keys, or raw sensitive conversations in Markdown; semantic indexes replicate chunk content.
+- **Profiles are explicit:** Exact profile retrieval requires a `profile_facts` mapping in a file directly under `Agents/`, `People/`, or `Projects/`.
+- **Reranking is adaptive:** The default requirements do not install `sentence-transformers`; readiness reports and uses the heuristic fallback unless it is added separately.
+- **MCP registration is per client:** Generating a snippet does not install it, and most clients need a reload after configuration changes.
+- **Non-default API ports need manual client configuration:** The runtime honors `UAMS_API_PORT` and `UAMS_API_URL`, but the current doctor and MCP config/audit helpers assume `http://localhost:8000`.
+- **Default vault path is the complete path:** The watcher, reconciliation, and readiness honor `UAMS_VAULT_PATH`, but some direct edit/quality/write helpers still resolve paths relative to the repository. Use the repository root as the vault for the fully supported deployment.
+- **Optional intelligence needs a generative model:** Search and reconciliation need embeddings; summarization, reflection, and identity extraction additionally need the configured LLM.
+- **Custom OpenAI-compatible endpoints are incomplete:** The current `openai` LLM and embedding adapters call the official OpenAI endpoints rather than arbitrary compatible base URLs.
+- **Legacy code is not the contract:** NetworkX JSON, legacy Qdrant collections, experimental memory-type consolidation, and old client middleware are not required by the reconciled `memory_chunks_v2` serving path.
+- **Windows parity is incomplete:** Batch launchers are retained for compatibility, but current supervision and verification focus on macOS/Linux.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). UAMS is released under the [MIT License](LICENSE).
+Read [AGENTS.md](AGENTS.md) before editing memory. Keep notes atomic, frontmatter-complete, structurally chunked, and heavily linked. Do not commit raw transcripts or unverified relationships.
 
-## Development
+For code changes:
 
-Run unit tests from the repo root:
+1. Reproduce the problem and add a failing test.
+2. Make the smallest change that preserves Markdown authority and current-revision safety.
+3. Run focused tests, the full suite, Compose validation, and `pip check`.
+4. Run the retrieval evaluation for any ingestion, chunking, embedding, graph, profile, or ranking change.
+5. Confirm `/ready` has no queue failures or projection drift.
+6. Keep generated databases, `.env`, logs, snapshots, caches, and local backups out of commits.
 
-```bash
-memory_watcher/.venv/bin/python -m pytest memory_watcher/tests memory_watcher/api/tests
-```
-
-Run container lifecycle and failure recovery tests:
-
-```bash
-make test-integration
-```
-
-Run the committed retrieval-quality release gate after migration:
-
-```bash
-make evaluate
-```
+The central design test is simple: a complete loss of PostgreSQL and Qdrant must not destroy knowledge, and no partially projected revision may silently become current.
