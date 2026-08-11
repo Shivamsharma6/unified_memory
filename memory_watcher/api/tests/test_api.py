@@ -31,6 +31,28 @@ def test_health_check_reports_unavailable_qdrant(monkeypatch):
     assert body["components"]["qdrant"]["status"] == "unavailable"
     assert "qdrant offline" in body["components"]["qdrant"]["detail"]
 
+
+def test_ready_endpoint_uses_deep_readiness_report(monkeypatch):
+    async def fake_assess(*args, **kwargs):
+        return {
+            "ready": True,
+            "components": {
+                "postgresql": {"status": "ok"},
+                "qdrant": {"status": "ok"},
+                "embedding_search_probe": {"status": "ok"},
+            },
+            "jobs": {"pending_jobs": 0, "failed_jobs": 0},
+            "drift": {"total": 0},
+        }
+
+    monkeypatch.setattr(api_main, "assess_readiness", fake_assess, raising=False)
+    monkeypatch.setattr(api_main.pipeline, "hybrid", object())
+
+    response = client.get("/ready")
+
+    assert response.status_code == 200
+    assert response.json()["ready"] is True
+
 def test_search_endpoint():
     # Since we can't spin up Qdrant reliably in a fast unit test without mocking,
     # we just test the endpoint schema and routing

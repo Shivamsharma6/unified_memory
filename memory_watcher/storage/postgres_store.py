@@ -1275,3 +1275,67 @@ class PostgresStore:
             )
             rows = await result.fetchall()
         return [row["canonical_name"] for row in rows]
+
+    async def readiness_metrics(self) -> dict[str, Any]:
+        async with self.pool.connection() as connection:
+            result = await connection.execute(
+                """
+                SELECT
+                    count(*) FILTER (WHERE status IN ('pending', 'running', 'retrying'))
+                        AS pending_jobs,
+                    count(*) FILTER (WHERE status = 'failed') AS failed_jobs,
+                    COALESCE(extract(epoch FROM now() - min(created_at)
+                        FILTER (WHERE status IN ('pending', 'running', 'retrying'))), 0)
+                        AS oldest_pending_seconds
+                FROM ingestion_jobs
+                """
+            )
+            jobs = await result.fetchone()
+            outbox_result = await connection.execute(
+                """
+                SELECT
+                    count(*) FILTER (WHERE status IN ('pending', 'processing'))
+                        AS pending_outbox,
+                    count(*) FILTER (WHERE status = 'failed') AS failed_outbox
+                FROM vector_outbox
+                """
+            )
+            outbox = await outbox_result.fetchone()
+        return {
+            "pending_jobs": int(jobs["pending_jobs"]),
+            "failed_jobs": int(jobs["failed_jobs"]),
+            "pending_outbox": int(outbox["pending_outbox"]),
+            "failed_outbox": int(outbox["failed_outbox"]),
+            "oldest_pending_seconds": float(jobs["oldest_pending_seconds"] or 0),
+        }
+
+    async def projection_state(self) -> dict[str, Any]:
+        async with self.pool.connection() as connection:
+            documents_result = await connection.execute(
+                """
+                SELECT memory_id, current_revision_id
+                FROM documents
+                WHERE status <> 'deleted'
+                """
+            )
+            documents = await documents_result.fetchall()
+            points_result = await connection.execute(
+                """
+                SELECT c.chunk_id
+                FROM chunks c
+                JOIN documents d ON d.current_revision_id = c.revision_id
+                WHERE d.status <> 'deleted'
+                """
+            )
+            point_rows = await points_result.fetchall()
+        point_ids = {row["chunk_id"] for row in point_rows}
+        return {
+            "document_ids": {row["memory_id"] for row in documents},
+            "current_pairs": {
+                (row["memory_id"], row["current_revision_id"])
+                for row in documents
+                if row["current_revision_id"] is not None
+            },
+            "point_ids": point_ids,
+            "expected_points": len(point_ids),
+        }

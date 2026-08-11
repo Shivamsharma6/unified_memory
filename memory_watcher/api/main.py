@@ -7,6 +7,7 @@ from api.routers.quality import router as quality_router
 from api.routers.memory_edit import router as memory_edit_router
 from api.routers.profiles import router as profiles_router
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from api.models import SearchRequest, SearchResponse, RememberRequest, SummarizeRequest, ContextRequest, ProcedureRequest
 from api.memory_writer import write_memory
 from api.procedure_reader import get_relevant_procedures
@@ -14,6 +15,7 @@ from api.retrieval.pipeline import RetrievalPipeline
 from llm.provider import LLMProvider, LLMConfig, MODEL_ROLES, get_llm_config
 from pipelines.ingestion import IngestionPipeline
 from identity.store import IdentityStore
+from api.readiness import assess_readiness
 
 app = FastAPI(
     title="Unified Agent Memory API",
@@ -183,6 +185,36 @@ async def health_check():
 
     status = "healthy" if all(c.get("status") == "ok" for k, c in components.items() if k not in ("models",)) else "degraded"
     return {"status": status, "components": components}
+
+
+@app.get("/ready", tags=["System"])
+async def readiness_check():
+    if pipeline.hybrid is None:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "ready": False,
+                "components": {
+                    "postgresql": {
+                        "status": "unavailable",
+                        "detail": "control plane is not initialized",
+                    }
+                },
+                "jobs": {},
+                "drift": {"total": -1},
+            },
+        )
+    vault_root = Path(
+        os.getenv("UAMS_VAULT_PATH", str(Path(__file__).resolve().parents[2]))
+    )
+    report = await assess_readiness(
+        vault_root,
+        pipeline.control_store,
+        pipeline.vector_store,
+        pipeline.embedder,
+        pipeline.reranker,
+    )
+    return JSONResponse(status_code=200 if report["ready"] else 503, content=report)
 
 @app.get("/llm-status", tags=["System"])
 async def llm_status():

@@ -1,4 +1,4 @@
-.PHONY: install start stop restart logs test clean
+.PHONY: install start stop restart status migrate doctor integrate logs test test-integration clean
 
 VENV = memory_watcher/.venv
 PYTHON = $(VENV)/bin/python
@@ -22,6 +22,18 @@ stop:
 restart:
 	./uams restart
 
+status:
+	./uams status
+
+migrate:
+	./uams migrate
+
+doctor:
+	./uams doctor
+
+integrate:
+	./uams integrate
+
 logs:
 	./uams logs
 
@@ -30,6 +42,9 @@ test:
 	$(PYTHON) -m pytest memory_watcher/tests/
 	@echo "Running uams_sdk tests..."
 	$(PYTHON) -m pytest uams_sdk/tests/
+
+test-integration:
+	$(PYTHON) -m pytest memory_watcher/tests/integration/ -v
 
 clean:
 	./uams stop

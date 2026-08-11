@@ -9,7 +9,7 @@ API_PID_FILE="$PID_DIR/api.pid"
 WATCHER_PID_FILE="$PID_DIR/watcher.pid"
 
 usage() {
-  echo "Usage: ./uams {install|start|stop|restart|status|index|logs|mcp|mcp-config|doctor|integrate}"
+  echo "Usage: ./uams {install|start|stop [--infra]|restart|status|migrate|index|logs|mcp|mcp-config|doctor|integrate}"
 }
 
 compose_cmd() {
@@ -48,14 +48,36 @@ is_running() {
   [ -z "$pattern" ] || process_matches "$pid" "$pattern"
 }
 
-start_qdrant() {
+start_infra() {
   if ! docker info >/dev/null 2>&1; then
     echo "Docker is not running. Start Docker Desktop or OrbStack first."
     exit 1
   fi
   local compose
   compose="$(compose_cmd)"
-  (cd "$WATCHER_DIR" && $compose up -d qdrant)
+  (cd "$WATCHER_DIR" && $compose up -d --wait postgres qdrant)
+}
+
+apply_schema() {
+  PYTHONPATH="$WATCHER_DIR" "$VENV_DIR/bin/python" \
+    "$WATCHER_DIR/scripts/migrate_control_plane.py" --schema-only
+}
+
+wait_ready() {
+  local url="http://${UAMS_API_HOST:-127.0.0.1}:${UAMS_API_PORT:-8000}/ready"
+  local attempts="${UAMS_READY_ATTEMPTS:-180}"
+  local response=""
+  for ((attempt = 1; attempt <= attempts; attempt++)); do
+    if response="$(curl -fsS "$url" 2>/dev/null)"; then
+      echo "UAMS readiness passed."
+      return
+    fi
+    sleep 1
+  done
+  echo "UAMS did not become ready after ${attempts}s." >&2
+  curl -sS "$url" 2>/dev/null || true
+  echo >&2
+  exit 1
 }
 
 start_api() {
@@ -113,14 +135,21 @@ case "${1:-}" in
     ;;
   start)
     require_venv
-    start_qdrant
-    start_api
+    start_infra
+    apply_schema
     start_watcher
+    start_api
+    wait_ready
     echo "UAMS is online: http://${UAMS_API_HOST:-127.0.0.1}:${UAMS_API_PORT:-8000}/docs"
     ;;
   stop)
     stop_one "Watcher" "$WATCHER_PID_FILE" "python.*main.py"
     stop_one "API" "$API_PID_FILE" "uvicorn .*api.main:app|python.*-m uvicorn .*api.main:app"
+    if [ "${2:-}" = "--infra" ]; then
+      compose="$(compose_cmd)"
+      (cd "$WATCHER_DIR" && $compose stop postgres qdrant)
+      echo "PostgreSQL and Qdrant stopped; named volumes were preserved."
+    fi
     ;;
   restart)
     "$0" stop
@@ -130,15 +159,27 @@ case "${1:-}" in
     if is_running "$API_PID_FILE" "uvicorn .*api.main:app|python.*-m uvicorn .*api.main:app"; then echo "API: running on PID $(cat "$API_PID_FILE")"; else echo "API: stopped"; fi
     if is_running "$WATCHER_PID_FILE" "python.*main.py"; then echo "Watcher: running on PID $(cat "$WATCHER_PID_FILE")"; else echo "Watcher: stopped"; fi
     if ! docker info >/dev/null 2>&1; then
-      echo "Qdrant: unknown (Docker is not running)"
+      echo "PostgreSQL/Qdrant: unknown (Docker is not running)"
     else
       compose="$(compose_cmd)"
-      (cd "$WATCHER_DIR" && $compose ps qdrant)
+      (cd "$WATCHER_DIR" && $compose ps postgres qdrant)
     fi
+    if curl -fsS "http://${UAMS_API_HOST:-127.0.0.1}:${UAMS_API_PORT:-8000}/ready" >/dev/null 2>&1; then
+      echo "Readiness: ready"
+    else
+      echo "Readiness: not ready"
+    fi
+    ;;
+  migrate)
+    require_venv
+    start_infra
+    shift
+    PYTHONPATH="$WATCHER_DIR" exec "$VENV_DIR/bin/python" \
+      "$WATCHER_DIR/scripts/migrate_control_plane.py" "$@"
     ;;
   index)
     require_venv
-    start_qdrant
+    start_infra
     (cd "$WATCHER_DIR" && "$VENV_DIR/bin/python" scripts/reindex_vault.py)
     ;;
   logs)
@@ -159,6 +200,7 @@ case "${1:-}" in
     ;;
   integrate)
     require_venv
+    shift
     "$VENV_DIR/bin/python" "$WATCHER_DIR/scripts/auto_integrate.py"
     ;;
   *)

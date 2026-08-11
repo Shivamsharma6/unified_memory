@@ -176,6 +176,53 @@ class QdrantStore:
             with_payload=True,
         )
 
+    async def readiness_probe(self, query_vector: List[float]) -> Dict[str, Any]:
+        collection = await self.client.get_collection(self.v2_collection)
+        expected_size = collection.config.params.vectors.size
+        if len(query_vector) != expected_size:
+            raise ValueError(
+                f"Probe embedding dimension {len(query_vector)} does not match {expected_size}"
+            )
+        results = await self.search_v2(query_vector, limit=1)
+        return {
+            "collection": self.v2_collection,
+            "vector_size": expected_size,
+            "result_count": len(results),
+        }
+
+    async def projection_state(self) -> Dict[str, Any]:
+        pairs = set()
+        point_ids = set()
+        points = 0
+        offset = None
+        while True:
+            records, offset = await self.client.scroll(
+                collection_name=self.v2_collection,
+                limit=256,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            points += len(records)
+            for record in records:
+                try:
+                    point_ids.add(uuid.UUID(str(record.id)))
+                except (TypeError, ValueError):
+                    pass
+                payload = record.payload or {}
+                try:
+                    pairs.add(
+                        (
+                            uuid.UUID(str(payload["memory_id"])),
+                            uuid.UUID(str(payload["revision_id"])),
+                        )
+                    )
+                except (KeyError, TypeError, ValueError):
+                    continue
+            if offset is None:
+                break
+        return {"pairs": pairs, "point_ids": point_ids, "points": points}
+
     def _determine_collection(self, category: Optional[str]) -> str:
         cat = str(category).lower() if category else ""
         if "semantic" in cat: return "semantic_memory"

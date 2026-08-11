@@ -9,6 +9,7 @@ import httpx
 
 ROOT = Path(__file__).resolve().parents[2]
 VENV = ROOT / "memory_watcher" / ".venv"
+COMPOSE_FILE = ROOT / "memory_watcher" / "docker-compose.yml"
 
 
 def check(name: str, ok: bool, detail: str = "") -> bool:
@@ -32,11 +33,34 @@ def main() -> int:
     failures += not check("mcp package", importlib.util.find_spec("mcp") is not None)
     failures += not check("uams_sdk package", importlib.util.find_spec("uams_sdk") is not None)
 
+    if shutil.which("docker"):
+        try:
+            result = subprocess.run(
+                [
+                    "docker",
+                    "compose",
+                    "-f",
+                    str(COMPOSE_FILE),
+                    "ps",
+                    "--status",
+                    "running",
+                    "--services",
+                ],
+                text=True,
+                capture_output=True,
+                timeout=10,
+            )
+            services = set(result.stdout.split())
+            failures += not check("postgres container", "postgres" in services)
+            failures += not check("qdrant container", "qdrant" in services)
+        except Exception as exc:
+            failures += not check("database containers", False, str(exc))
+
     try:
-        response = httpx.get("http://localhost:8000/health", timeout=2.0)
-        failures += not check("api health", response.status_code == 200, response.text[:120])
+        response = httpx.get("http://localhost:8000/ready", timeout=10.0)
+        failures += not check("api readiness", response.status_code == 200, response.text[:240])
     except Exception as exc:
-        warn("api health", f"not reachable yet: {exc}")
+        failures += not check("api readiness", False, str(exc))
 
     try:
         result = subprocess.run(
