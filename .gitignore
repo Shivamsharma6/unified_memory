@@ -53,6 +53,10 @@ MANIFEST
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
 
+# Agent Workspaces
+.worktrees/
+.superpowers/
+
 # Memory Vault Folders (User Data)
 Concepts/
 Conversations/
