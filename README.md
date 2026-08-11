@@ -204,9 +204,9 @@ The UAMS MCP server exposes a **begin-then-end task lifecycle**: agents call `be
 | `summarize_memory` | Read | Summarize a topic. |
 | `health` | Read | Check UAMS API connectivity. |
 
-**Codex Configuration (already applied):**
+**Codex Configuration:**
 
-The UAMS MCP server is configured in `~/.codex/config.toml`:
+Add the generated UAMS MCP block to `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.uams]
@@ -228,7 +228,7 @@ Generate MCP config for other agents:
 ```bash
 ./uams mcp-config json        # Claude Code / Cursor / Windsurf
 ./uams mcp-config all          # All formats
-./uams integrate               # Auto-integrate with local agents
+./uams integrate               # Audit local agent registrations without changes
 ```
 
 
