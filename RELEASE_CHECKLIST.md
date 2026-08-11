@@ -29,7 +29,7 @@ timestamps:
 - [x] Run `make evaluate` and require hit@1 ≥ 80%, hit@5 ≥ 90%, and zero lifecycle leaks.
 - [x] Run `make test-integration` against live Docker PostgreSQL and Qdrant.
 - [x] Run `./uams mcp-config all` and verify the generated snippets use absolute paths.
-- [ ] Register the MCP server in at least one MCP client and verify tool discovery.
+- [x] Register the MCP server in at least one MCP client and verify tool discovery.
 - [x] Run `memory_watcher/.venv/bin/python -m pytest memory_watcher/tests memory_watcher/api/tests tests uams_sdk/tests -q`.
 - [x] Run `memory_watcher/.venv/bin/python -m compileall -q memory_watcher uams_sdk`.
 - [x] Run `docker compose -f memory_watcher/docker-compose.yml config --quiet`.
