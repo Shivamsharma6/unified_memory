@@ -1,5 +1,11 @@
 import pytest
+import sys
+from datetime import datetime
 from pathlib import Path
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from intelligence.distiller import MemoryDistiller
 from llm.provider import LLMConfig
 
@@ -62,7 +68,11 @@ async def test_llm_lesson_extraction(vault_with_daily):
 @pytest.mark.asyncio
 async def test_distill_cycle_uses_llm(vault_with_daily):
     config = LLMConfig(provider="mock", model="test")
-    distiller = MemoryDistiller(str(vault_with_daily), llm_config=config)
+    distiller = MemoryDistiller(
+        str(vault_with_daily),
+        llm_config=config,
+        now=lambda: datetime(2026, 6, 5),
+    )
     await distiller.distill_cycle()
     daily_file = vault_with_daily / "Daily" / "2026-06-01-Test-Work.md"
     content = daily_file.read_text()

@@ -1,3 +1,22 @@
+---
+type: semantic
+status: active
+aliases:
+  - UAMS
+  - Unified Memory
+tags:
+  - "#uams"
+  - "#architecture"
+  - "#operations"
+entities:
+  - "[[Unified Agent Memory System]]"
+  - "[[PostgreSQL]]"
+  - "[[Qdrant]]"
+timestamps:
+  created: 2026-06-10
+  updated: 2026-08-11
+---
+
 # Unified Agent Memory System
 
 **Unified Agent Memory System (UAMS)** is a local-first shared brain for AI agents. It gives tools like OpenClaw, Hermes, Claude Code, Codex, VoiceAI, and custom agents one durable memory layer for codebase knowledge, bug-fix history, procedures, decisions, and entity relationships.
@@ -7,8 +26,8 @@ The goal is simple: when an agent fixes bug A today, every agent can retrieve wh
 ## What It Does
 
 - **Shared memory vault:** Human-readable Markdown notes with YAML frontmatter, Obsidian wikilinks, and strict agent-writing rules in `AGENTS.md`.
-- **Auto-growing knowledge:** A watcher indexes new or changed memories into Qdrant and updates a NetworkX knowledge graph.
-- **Hybrid retrieval:** Agents query one API that combines semantic search, entity extraction, graph expansion, reranking, and context compression.
+- **Reconciled knowledge:** A watcher stages Markdown revisions in [[PostgreSQL]] and delivers semantic vectors to [[Qdrant]] through a durable outbox.
+- **Hybrid retrieval:** [[Qdrant]] supplies semantic candidates; [[PostgreSQL]] supplies exact/full-text matches, profiles, evidenced graph claims, and current-revision validation.
 - **Bug-fix recall:** Procedural memories and task notes make searches smaller and more accurate because past fixes become durable project knowledge.
 - **Agent SDK:** Python SDK and middleware for automatic pre-task memory injection and post-task memory distillation.
 - **One-command setup:** Cross-platform scripts (`Makefile`, `install.bat`) create the Python environment and install dependencies.
@@ -53,30 +72,30 @@ Procedures are matched by embedding similarity, not just keyword overlap. The sy
 ## Architecture
 
 ```text
-Markdown Vault
+Markdown Vault (authoritative)
   AGENTS.md, Concepts/, Projects/, Tasks/, Daily/
         |
         v
-Memory Watcher + Reindex Command
+Reconciler + Semantic Chunker
         |
-        +--> Semantic Chunker --> Embeddings --> Qdrant
+        +--> PostgreSQL control plane
+        |      revisions, FTS, profiles, claims, jobs, outbox
         |
-        +--> Graph Extractor --> NetworkX Knowledge Graph
+        +--> Qdrant memory_chunks_v2
+               semantic vectors (derived projection)
         |
         v
-Unified Retrieval API
-        |
-        v
-Agent SDK / Middleware
-  OpenClaw, Hermes, Claude Code, Codex, VoiceAI, custom agents
+Hybrid Retrieval API --> Agent SDK / MCP
 ```
+
+Markdown is the only authoritative memory record. PostgreSQL and Qdrant are rebuildable projections. A revision becomes current only after its complete vector projection is acknowledged; normal retrieval rejects archived, deleted, and superseded revisions.
 
 ## Quick Start
 
 Requirements:
 
 - Python 3.11+
-- Docker or OrbStack for Qdrant
+- Docker or OrbStack for PostgreSQL and Qdrant
 - macOS, Linux, or Windows
 
 Install:
@@ -103,10 +122,10 @@ Open the API docs:
 http://localhost:8000/docs
 ```
 
-Index the whole vault:
+Reconcile and migrate the whole vault:
 
 ```bash
-./uams index
+./uams migrate
 ```
 
 Check status or stop services:
@@ -114,11 +133,13 @@ Check status or stop services:
 ```bash
 ./uams status
 ./uams stop
+./uams stop --infra  # explicitly stop PostgreSQL and Qdrant too
 ```
 
-Docker and Qdrant are automated by `./uams start`. UAMS uses Docker Compose to run Qdrant locally, with ports bound to `127.0.0.1` by default:
+`./uams start` starts both databases, applies schema migrations, starts the watcher and API, and waits for deep readiness. Docker ports are bound to `127.0.0.1` by default:
 
 ```text
+PostgreSQL: 127.0.0.1:5432
 Qdrant HTTP: http://127.0.0.1:6333
 Qdrant gRPC: 127.0.0.1:6334
 ```
@@ -129,7 +150,7 @@ Optional overrides live in `.env`:
 cp .env.example .env
 ```
 
-The default image follows Qdrant’s documented Docker setup, which uses `qdrant/qdrant:latest`. For stricter production pinning, set `QDRANT_IMAGE=qdrant/qdrant:<version>` in `.env`.
+The Qdrant default is pinned to an exact tested image digest, and PostgreSQL defaults to `postgres:16-bookworm`. Override them in `.env` only as a deliberate upgrade.
 
 Run the MCP adapter for MCP-aware agents:
 
@@ -143,7 +164,7 @@ Print ready-to-paste MCP registration snippets:
 ./uams mcp-config all
 ```
 
-Automatically integrate UAMS MCP server with all installed local agents (Claude Desktop, Claude Code, Cursor, Windsurf):
+Audit UAMS MCP registration for installed local agents without modifying their configuration:
 
 ```bash
 ./uams integrate
@@ -311,19 +332,18 @@ Middleware can automatically:
 See [uams_sdk/README.md](uams_sdk/README.md) and [memory_watcher/integrations/openclaw](memory_watcher/integrations/openclaw) for examples.
 
 ## Memory Model
-## Memory Types
 
-UAMS now supports **7 distinct memory categories**, each with its own Qdrant collection and retrieval strategy:
+UAMS supports **7 application memory categories**. Current semantic chunks share one Qdrant collection, `memory_chunks_v2`; `memory_type` remains an indexed payload/filter and PostgreSQL column.
 
-| Category | Purpose | Collection |
-|----------|---------|------------|
-| `semantic` | Facts, concepts, domain knowledge | `semantic_memory` |
-| `episodic` | Experiences, events, interactions (with emotional metadata) | `episodic_memory` |
-| `procedural` | How-to knowledge, workflows, procedures | `procedural_memory` |
-| `identity` | Stable personality traits, preferences | `identity_memory` |
-| `goal` | Ongoing objectives, project states | `goal_memory` |
-| `reflection` | Self-analysis, lessons learned, patterns | `reflection_memory` |
-| `relationship` | Person-specific dynamics, communication styles | `relationship_memory` |
+| Category | Purpose |
+|----------|---------|
+| `semantic` | Facts, concepts, domain knowledge |
+| `episodic` | Experiences, events, interactions |
+| `procedural` | How-to knowledge, workflows, procedures |
+| `identity` | Stable personality traits and preferences |
+| `goal` | Ongoing objectives and project states |
+| `reflection` | Self-analysis, lessons learned, patterns |
+| `relationship` | Person-specific dynamics and communication styles |
 
 ### Episodic Memory Schema
 
@@ -418,7 +438,10 @@ The full write protocol lives in [AGENTS.md](AGENTS.md).
 - `POST /remember`: direct agent write path.
 - `POST /procedures`: procedure retrieval for coding and operational tasks.
 - `GET /graph/neighborhood/{entity}`: graph neighborhood lookup.
+- `GET /profiles/{profile_id}`: exact current profile facts with evidence.
+- `GET /memory/status/{memory_id}`: revision and projection lifecycle.
 - `GET /health`: API health check.
+- `GET /ready`: deep database, embedding/search, queue, and drift readiness.
 
 ## Repository Layout
 
@@ -426,11 +449,11 @@ The full write protocol lives in [AGENTS.md](AGENTS.md).
 .
 ├── AGENTS.md                  # Memory-writing protocol for agents
 ├── install.sh                 # One-command local installer
-├── uams                       # Service control: start, stop, status, index, logs, mcp
-├── memory_watcher/            # Watcher, ingestion pipeline, retrieval API
+├── uams                       # Service control: start, migrate, status, logs, mcp
+├── memory_watcher/            # Reconciler, PostgreSQL control plane, Qdrant projection, API
 ├── uams_sdk/                  # Python SDK, MCP server, and agent middleware
 ├── Concepts/ Projects/ Tasks/ # Canonical memory vault
-└── AI/                        # Derived graph, embedding, and cache areas
+└── AI/                        # Legacy/derived embedding and cache areas
 ```
 
 ## Open Source Roadmap
@@ -439,7 +462,6 @@ The full write protocol lives in [AGENTS.md](AGENTS.md).
 - Add more templates for Claude Code, Codex, OpenClaw, Hermes, and LangChain-style agents.
 - Replace heuristic post-task distillation with configurable local or hosted LLM distillers.
 - Add first-class repository scanners for code symbols, commits, PRs, and issue history.
-- Add memory quality checks for missing frontmatter, orphan notes, and oversized chunks.
 - Publish Docker Compose profiles for local-only, team, and production setups.
 
 ## Public Release
@@ -458,9 +480,14 @@ Run unit tests from the repo root:
 memory_watcher/.venv/bin/python -m pytest memory_watcher/tests memory_watcher/api/tests
 ```
 
-Rebuild the knowledge graph only:
+Run container lifecycle and failure recovery tests:
 
 ```bash
-cd memory_watcher
-.venv/bin/python scripts/force_graph_rebuild.py
+make test-integration
+```
+
+Run the committed retrieval-quality release gate after migration:
+
+```bash
+make evaluate
 ```

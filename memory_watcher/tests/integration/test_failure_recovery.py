@@ -91,6 +91,21 @@ async def test_dependency_outages_missed_events_and_malformed_notes_recover(
     assert fixed.status == "staged"
     await _drain(worker, store)
 
+    retry_id = uuid.uuid4()
+    retry_note = tmp_path / "Concepts" / "Operator Retry.md"
+    retry_note.write_text(managed_note(retry_id, "An exhausted vector command is recoverable."))
+    await reconciler.reconcile_path(retry_note)
+    exhausted = await store.claim_vector_outbox("exhaustion-test", 1)
+    assert len(exhausted) == 1
+    await store.fail_vector_command(
+        exhausted[0],
+        RuntimeError("forced terminal embedding failure"),
+        max_attempts=1,
+    )
+    assert (await store.readiness_metrics())["failed_outbox"] == 1
+    assert await store.requeue_failed_vector_commands() == 1
+    await _drain(worker, store)
+
     report = await assess_readiness(
         tmp_path,
         store,

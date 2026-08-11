@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from pipelines.reconciliation import Reconciler
+from pipelines.reconciliation import Reconciler, projection_hash
 
 
 def _write_note(path: Path, memory_id: uuid.UUID, body: str = "Durable fact.") -> None:
@@ -33,6 +33,13 @@ timestamps:
 """,
         encoding="utf-8",
     )
+
+
+def test_projection_hash_is_stable_within_a_version_and_changes_on_upgrade():
+    markdown = "---\ntype: semantic\n---\n# Durable Fact\n"
+
+    assert projection_hash(markdown, version=2) == projection_hash(markdown, version=2)
+    assert projection_hash(markdown, version=1) != projection_hash(markdown, version=2)
 
 
 class FakeStore:

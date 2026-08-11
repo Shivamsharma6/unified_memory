@@ -17,10 +17,12 @@ class CrossEncoderReranker:
         self.model_name = model_name or self.MODEL_NAME
         self._model = None
         self._available = False
+        self._initialized = False
 
     async def _ensure_model(self):
-        if self._model is not None:
+        if self._initialized:
             return
+        self._initialized = True
         try:
             from sentence_transformers import CrossEncoder
             self._model = CrossEncoder(self.model_name, max_length=512)

@@ -31,6 +31,21 @@ def test_workflow_status_is_preserved_for_lifecycle_mapping(tmp_path):
     assert record.status == "approved"
 
 
+def test_nested_yaml_wikilink_lists_are_flattened(tmp_path):
+    path = tmp_path / "Concepts" / "WiFi Sensing.md"
+    content = """---
+type: concept
+entities:
+  - [[ESP32]]
+---
+# WiFi Sensing
+"""
+
+    record = parse_memory(path, content, vault_root=tmp_path)
+
+    assert record.entities == ["ESP32"]
+
+
 def test_resolve_vault_path_rejects_escape(tmp_path):
     try:
         resolve_vault_path(tmp_path, "../outside.md")

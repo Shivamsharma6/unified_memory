@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 from api.retrieval.reranker import CrossEncoderReranker
 
@@ -18,6 +20,22 @@ async def test_reranker_scores_pairs():
     scores = await reranker.score(pairs)
     assert len(scores) == 2
     assert scores[0] > scores[1]
+
+
+@pytest.mark.asyncio
+async def test_unavailable_cross_encoder_is_only_initialized_once(monkeypatch, caplog):
+    monkeypatch.setitem(sys.modules, "sentence_transformers", None)
+    reranker = CrossEncoderReranker()
+
+    await reranker._ensure_model()
+    await reranker._ensure_model()
+
+    fallback_messages = [
+        record.message
+        for record in caplog.records
+        if "Falling back to heuristic reranking" in record.message
+    ]
+    assert len(fallback_messages) == 1
 
 
 @pytest.mark.asyncio

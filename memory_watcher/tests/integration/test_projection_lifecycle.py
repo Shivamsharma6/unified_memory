@@ -189,3 +189,134 @@ async def test_profile_facts_are_exact_evidenced_and_hidden_when_archived(
     historical = await store.get_profile("shivam sharma", include_historical=True)
     assert historical is not None
     assert historical["facts"][0]["evidence_revision_id"] == str(staged.revision_id)
+
+
+@pytest.mark.asyncio
+async def test_zero_chunk_markdown_does_not_create_false_qdrant_drift(
+    tmp_path,
+    live_control_plane,
+):
+    store, vectors = live_control_plane
+    embedder = DeterministicEmbedder(vectors.vector_size)
+    worker = VectorWorker(store, vectors, embedder, batch_size=20)
+    memory_id = uuid.uuid4()
+    note = tmp_path / "Concepts" / "Heading Only.md"
+    note.parent.mkdir(parents=True)
+    note.write_text(
+        managed_note(memory_id, "").replace(
+            "## Durable Fact\n\n\n",
+            "",
+        )
+    )
+
+    staged = await Reconciler(tmp_path, store).reconcile_path(note)
+    await worker.run_once()
+    report = await assess_readiness(
+        tmp_path,
+        store,
+        vectors,
+        embedder,
+        HeuristicReranker(),
+    )
+
+    assert staged.status == "staged"
+    assert report["ready"] is True, report
+    assert report["drift"]["qdrant_missing"] == 0
+
+
+@pytest.mark.asyncio
+async def test_full_text_search_relaxes_natural_language_without_losing_term_rank(
+    tmp_path,
+    live_control_plane,
+):
+    store, vectors = live_control_plane
+    memory_id = uuid.uuid4()
+    note = tmp_path / "Concepts" / "Markdown Authority.md"
+    note.parent.mkdir(parents=True)
+    note.write_text(
+        managed_note(memory_id, "Markdown remains the authoritative shared memory.")
+    )
+    noisy_id = uuid.uuid4()
+    noisy = tmp_path / "Concepts" / "Noisy Memory.md"
+    noisy.write_text(
+        managed_note(
+            noisy_id,
+            " ".join(["record shared memory"] * 80),
+        )
+    )
+    reconciler = Reconciler(tmp_path, store)
+    await reconciler.reconcile_path(note)
+    await reconciler.reconcile_path(noisy)
+    await VectorWorker(
+        store,
+        vectors,
+        DeterministicEmbedder(vectors.vector_size),
+        batch_size=10,
+    ).run_once()
+
+    results = await store.fts_search(
+        "What remains the authoritative shared memory record?",
+        limit=5,
+    )
+
+    assert results[0]["payload"]["source_file"] == "Concepts/Markdown Authority.md"
+
+
+@pytest.mark.asyncio
+async def test_existing_revision_revert_and_deleted_restore_are_reprojected(
+    tmp_path,
+    live_control_plane,
+):
+    store, vectors = live_control_plane
+    worker = VectorWorker(
+        store,
+        vectors,
+        DeterministicEmbedder(vectors.vector_size),
+        batch_size=10,
+    )
+    reconciler = Reconciler(tmp_path, store)
+    memory_id = uuid.uuid4()
+    note = tmp_path / "Concepts" / "Revertable.md"
+    note.parent.mkdir(parents=True)
+    revision_one_content = managed_note(memory_id, "Revision one is authoritative.")
+    note.write_text(revision_one_content)
+    revision_one = await reconciler.reconcile_path(note)
+    await worker.run_once()
+
+    note.write_text(managed_note(memory_id, "Revision two is temporary."))
+    revision_two = await reconciler.reconcile_path(note)
+    await worker.run_once()
+    await worker.run_once()
+    assert (await document_row(store, memory_id))["current_revision_id"] == revision_two.revision_id
+
+    note.write_text(revision_one_content)
+    reverted = await reconciler.reconcile_path(note)
+    before_reprojection = await document_row(store, memory_id)
+
+    assert reverted.status == "staged"
+    assert reverted.revision_id == revision_one.revision_id
+    assert before_reprojection["current_revision_id"] == revision_two.revision_id
+
+    await worker.run_once()
+    await worker.run_once()
+    assert (await document_row(store, memory_id))["current_revision_id"] == revision_one.revision_id
+
+    note.unlink()
+    await reconciler.reconcile_path(note)
+    await worker.run_once()
+    note.write_text(revision_one_content)
+    restored = await reconciler.reconcile_path(note)
+
+    assert restored.status == "staged"
+    await worker.run_once()
+    assert (await document_row(store, memory_id))["status"] == "active"
+    assert (await document_row(store, memory_id))["current_revision_id"] == revision_one.revision_id
+
+    report = await assess_readiness(
+        tmp_path,
+        store,
+        vectors,
+        DeterministicEmbedder(vectors.vector_size),
+        HeuristicReranker(),
+    )
+    assert report["ready"] is True, report

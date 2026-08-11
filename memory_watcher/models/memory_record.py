@@ -119,8 +119,21 @@ def deterministic_memory_id(path: Path, vault_root: Path | None = None) -> uuid.
 def _as_string_list(value: Any) -> list[str]:
     if value is None:
         return []
-    values = value if isinstance(value, list) else [value]
-    return list(dict.fromkeys(str(item).strip() for item in values if str(item).strip()))
+    values = list(value) if isinstance(value, list) else [value]
+    flattened = []
+    while values:
+        item = values.pop(0)
+        if isinstance(item, (list, tuple)):
+            values[:0] = list(item)
+        else:
+            flattened.append(item)
+    return list(
+        dict.fromkeys(
+            str(item).strip()
+            for item in flattened
+            if item is not None and str(item).strip()
+        )
+    )
 
 
 def _as_timestamp(value: Any) -> str | None:

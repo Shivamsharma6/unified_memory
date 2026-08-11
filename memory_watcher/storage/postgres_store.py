@@ -188,12 +188,17 @@ class PostgresStore:
                     (str(record.memory_id),),
                 )
                 current_result = await connection.execute(
-                    "SELECT current_revision_id, path FROM documents WHERE memory_id = %s",
+                    """
+                    SELECT current_revision_id, path, status
+                    FROM documents
+                    WHERE memory_id = %s
+                    """,
                     (record.memory_id,),
                 )
                 current = await current_result.fetchone()
                 previous_revision_id = current["current_revision_id"] if current else None
                 previous_path = current["path"] if current else None
+                previous_status = current["status"] if current else None
 
                 await connection.execute(
                     """
@@ -228,6 +233,84 @@ class PostgresStore:
                 )
                 existing = await existing_result.fetchone()
                 if existing:
+                    existing_revision_id = existing["revision_id"]
+                    needs_projection = (
+                        existing_revision_id != previous_revision_id
+                        or previous_status == "deleted"
+                    )
+                    if needs_projection:
+                        await connection.execute(
+                            """
+                            UPDATE document_revisions
+                            SET state = 'staged', superseded_at = NULL
+                            WHERE revision_id = %s
+                            """,
+                            (existing_revision_id,),
+                        )
+                        await connection.execute(
+                            """
+                            UPDATE profile_facts
+                            SET status = 'staged', valid_to = NULL
+                            WHERE evidence_revision_id = %s
+                              AND status = 'superseded'
+                            """,
+                            (existing_revision_id,),
+                        )
+                        await connection.execute(
+                            """
+                            INSERT INTO ingestion_jobs (
+                                memory_id, revision_id, event_type, status
+                            ) VALUES (%s, %s, %s, 'pending')
+                            """,
+                            (record.memory_id, existing_revision_id, event_type),
+                        )
+                        await connection.execute(
+                            """
+                            INSERT INTO vector_outbox (
+                                command, memory_id, revision_id, payload
+                            ) VALUES ('upsert_revision', %s, %s, %s)
+                            ON CONFLICT (command, memory_id, revision_id)
+                            DO UPDATE SET
+                                status = 'pending', attempts = 0,
+                                available_at = now(), locked_at = NULL,
+                                locked_by = NULL, last_error = NULL,
+                                completed_at = NULL,
+                                payload = EXCLUDED.payload
+                            """,
+                            (
+                                record.memory_id,
+                                existing_revision_id,
+                                Jsonb({"content_hash": content_hash, "reprojection": True}),
+                            ),
+                        )
+                        await connection.execute(
+                            """
+                            INSERT INTO memory_audit_events (
+                                memory_id, revision_id, event_type, actor, details
+                            ) VALUES (%s, %s, 'revision_restaged', %s, %s)
+                            """,
+                            (
+                                record.memory_id,
+                                existing_revision_id,
+                                record.source_agent,
+                                Jsonb(
+                                    {
+                                        "path": record.vault_path,
+                                        "previous_revision_id": (
+                                            str(previous_revision_id)
+                                            if previous_revision_id
+                                            else None
+                                        ),
+                                        "previous_status": previous_status,
+                                    }
+                                ),
+                            ),
+                        )
+                        return StageRevisionResult(
+                            revision_id=existing_revision_id,
+                            previous_revision_id=previous_revision_id,
+                            created=True,
+                        )
                     if previous_path != record.vault_path or event_type == "archive":
                         await connection.execute(
                             """
@@ -701,7 +784,12 @@ class PostgresStore:
                         INSERT INTO vector_outbox (
                             command, memory_id, revision_id, payload
                         ) VALUES ('delete_revision', %s, %s, '{}'::jsonb)
-                        ON CONFLICT (command, memory_id, revision_id) DO NOTHING
+                        ON CONFLICT (command, memory_id, revision_id)
+                        DO UPDATE SET
+                            status = 'pending', attempts = 0,
+                            available_at = now(), locked_at = NULL,
+                            locked_by = NULL, last_error = NULL,
+                            completed_at = NULL
                         """,
                         (command.memory_id, previous_revision_id),
                     )
@@ -802,10 +890,8 @@ class PostgresStore:
         source_agents: list[str] | None = None,
         include_historical: bool = False,
     ) -> list[dict[str, Any]]:
-        conditions = [
-            "c.search_vector @@ websearch_to_tsquery('english'::regconfig, %s)"
-        ]
-        parameters: list[Any] = [query]
+        conditions = ["c.search_vector @@ search_queries.relaxed_query"]
+        parameters: list[Any] = []
         if include_historical:
             conditions.append("r.state IN ('active', 'superseded')")
         else:
@@ -824,14 +910,36 @@ class PostgresStore:
             if values:
                 conditions.append(f"{column} = ANY(%s)")
                 parameters.append(values)
-        parameters = [query, *parameters, limit]
+        parameters = [query, query, query, *parameters, limit]
         sql = f"""
+            WITH search_queries AS (
+                SELECT
+                    websearch_to_tsquery('english'::regconfig, %s) AS strict_query,
+                    tsvector_to_array(
+                        to_tsvector('english'::regconfig, %s)
+                    ) AS query_lexemes,
+                    to_tsquery(
+                        'english'::regconfig,
+                        array_to_string(
+                            tsvector_to_array(
+                                to_tsvector('english'::regconfig, %s)
+                            ),
+                            ' | '
+                        )
+                    ) AS relaxed_query
+            )
             SELECT c.chunk_id, c.content, c.heading_path, c.metadata,
                    d.memory_id, d.memory_type, d.path,
                    r.revision_id, r.project, r.source_agent, r.frontmatter,
-                   ts_rank_cd(
-                       c.search_vector,
-                       websearch_to_tsquery('english'::regconfig, %s)
+                   (lexical.coverage
+                       + CASE
+                           WHEN c.search_vector @@ search_queries.strict_query
+                           THEN 0.25 ELSE 0.0
+                         END
+                       + LEAST(0.25, ts_rank_cd(
+                           c.search_vector,
+                           search_queries.relaxed_query
+                         ))
                    ) AS rank,
                    COALESCE((
                        SELECT array_agg(DISTINCT e.normalized_key)
@@ -842,8 +950,25 @@ class PostgresStore:
             FROM chunks c
             JOIN document_revisions r ON r.revision_id = c.revision_id
             JOIN documents d ON d.memory_id = r.memory_id
+            CROSS JOIN search_queries
+            CROSS JOIN LATERAL (
+                SELECT
+                    cardinality(
+                        ARRAY(
+                            SELECT unnest(search_queries.query_lexemes)
+                            INTERSECT
+                            SELECT unnest(tsvector_to_array(c.search_vector))
+                        )
+                    )::double precision
+                    / GREATEST(cardinality(search_queries.query_lexemes), 1)
+                    AS coverage
+            ) AS lexical
             WHERE {' AND '.join(conditions)}
-            ORDER BY rank DESC, c.ordinal
+            ORDER BY
+                lexical.coverage DESC,
+                (c.search_vector @@ search_queries.strict_query) DESC,
+                rank DESC,
+                c.ordinal
             LIMIT %s
         """
         async with self.pool.connection() as connection:
@@ -1322,13 +1447,48 @@ class PostgresStore:
             "oldest_pending_seconds": float(jobs["oldest_pending_seconds"] or 0),
         }
 
+    async def requeue_failed_vector_commands(self) -> int:
+        """Requeue exhausted vector work for an explicit operator migration retry."""
+
+        async with self.pool.connection() as connection:
+            async with connection.transaction():
+                result = await connection.execute(
+                    """
+                    UPDATE vector_outbox
+                    SET status = 'pending', available_at = now(),
+                        locked_at = NULL, locked_by = NULL
+                    WHERE status = 'failed'
+                    RETURNING revision_id
+                    """
+                )
+                rows = await result.fetchall()
+                revision_ids = [
+                    row["revision_id"]
+                    for row in rows
+                    if row["revision_id"] is not None
+                ]
+                if revision_ids:
+                    await connection.execute(
+                        """
+                        UPDATE ingestion_jobs
+                        SET status = 'retrying', finished_at = NULL, updated_at = now()
+                        WHERE revision_id = ANY(%s) AND status = 'failed'
+                        """,
+                        (revision_ids,),
+                    )
+        return len(rows)
+
     async def projection_state(self) -> dict[str, Any]:
         async with self.pool.connection() as connection:
             documents_result = await connection.execute(
                 """
-                SELECT memory_id, current_revision_id
-                FROM documents
-                WHERE status <> 'deleted'
+                SELECT d.memory_id, d.current_revision_id,
+                       EXISTS (
+                           SELECT 1 FROM chunks c
+                           WHERE c.revision_id = d.current_revision_id
+                       ) AS has_chunks
+                FROM documents d
+                WHERE d.status <> 'deleted'
                 """
             )
             documents = await documents_result.fetchall()
@@ -1347,7 +1507,7 @@ class PostgresStore:
             "current_pairs": {
                 (row["memory_id"], row["current_revision_id"])
                 for row in documents
-                if row["current_revision_id"] is not None
+                if row["current_revision_id"] is not None and row["has_chunks"]
             },
             "point_ids": point_ids,
             "expected_points": len(point_ids),

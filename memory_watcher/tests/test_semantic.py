@@ -63,5 +63,21 @@ def foo():
         self.assertIn("```python", doc.chunks[0].content)
         self.assertIn("def foo():", doc.chunks[0].content)
 
+    def test_yaml_comment_tags_do_not_break_legacy_note_reconciliation(self):
+        md = """---
+type: concept
+tags:
+  - #legacy-unquoted-tag
+  - "#valid-tag"
+---
+# Legacy Note
+
+Durable body text.
+"""
+
+        doc = self.chunker.chunk(Document(path="legacy.md", raw_content=md))
+
+        self.assertEqual(doc.chunks[0].metadata.tags, ["#valid-tag"])
+
 if __name__ == '__main__':
     unittest.main()

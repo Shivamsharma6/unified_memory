@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import signal
 import sys
 from pathlib import Path
@@ -11,8 +12,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+def configured_vault_root() -> Path:
+    return Path(
+        os.getenv("UAMS_VAULT_PATH", str(Path(__file__).parent.parent))
+    ).resolve()
+
 async def main():
-    target_dir = str(Path(__file__).parent.parent.absolute())
+    target_dir = str(configured_vault_root())
     watcher = MemoryWatcher(target_dir=target_dir)
     
     # Graceful shutdown setup

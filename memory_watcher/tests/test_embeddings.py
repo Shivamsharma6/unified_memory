@@ -10,6 +10,19 @@ from embeddings.utils import cosine_similarity
 from models.document import Document, Chunk, ChunkMetadata
 import os
 
+
+class ContextLimitedOllamaClient:
+    def __init__(self):
+        self.prompts = []
+
+    async def embeddings(self, *, model, prompt):
+        self.prompts.append(prompt)
+        if len(prompt) > 8:
+            raise RuntimeError("the input length exceeds the context length")
+        if prompt.startswith("a"):
+            return {"embedding": [1.0, 0.0]}
+        return {"embedding": [0.0, 1.0]}
+
 class TestEmbeddings(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         # Use a test db
@@ -49,6 +62,18 @@ class TestEmbeddings(unittest.IsolatedAsyncioTestCase):
         
         self.assertAlmostEqual(cosine_similarity(v1, v2), 1.0)
         self.assertAlmostEqual(cosine_similarity(v1, v3), 0.0)
+
+    async def test_ollama_context_overflow_segments_and_combines_the_full_text(self):
+        generator = EmbeddingGenerator(provider="ollama", model_name="context-limited")
+        generator.ollama_client = ContextLimitedOllamaClient()
+
+        embeddings = await generator._generate_ollama(["aaaaaaaabbbbbbbb"])
+
+        self.assertEqual(generator.ollama_client.prompts[0], "aaaaaaaabbbbbbbb")
+        self.assertIn("aaaaaaaa", generator.ollama_client.prompts)
+        self.assertIn("bbbbbbbb", generator.ollama_client.prompts)
+        self.assertAlmostEqual(embeddings[0][0], 2 ** -0.5)
+        self.assertAlmostEqual(embeddings[0][1], 2 ** -0.5)
 
 if __name__ == '__main__':
     unittest.main()

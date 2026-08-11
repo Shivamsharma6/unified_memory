@@ -7,6 +7,8 @@ VENV_DIR="$WATCHER_DIR/.venv"
 PID_DIR="$WATCHER_DIR/.pids"
 API_PID_FILE="$PID_DIR/api.pid"
 WATCHER_PID_FILE="$PID_DIR/watcher.pid"
+API_LAUNCHD_LABEL="com.uams.api"
+WATCHER_LAUNCHD_LABEL="com.uams.watcher"
 
 usage() {
   echo "Usage: ./uams {install|start|stop [--infra]|restart|status|migrate|index|logs|mcp|mcp-config|doctor|integrate}"
@@ -48,6 +50,26 @@ is_running() {
   [ -z "$pattern" ] || process_matches "$pid" "$pattern"
 }
 
+launchd_available() {
+  [ "$(uname -s)" = "Darwin" ] && command -v launchctl >/dev/null 2>&1
+}
+
+launchd_running() {
+  local label="$1"
+  launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1
+}
+
+stop_launchd() {
+  local name="$1"
+  local label="$2"
+  if launchd_running "$label"; then
+    launchctl remove "$label"
+    echo "$name stopped."
+  else
+    echo "$name is not running."
+  fi
+}
+
 start_infra() {
   if ! docker info >/dev/null 2>&1; then
     echo "Docker is not running. Start Docker Desktop or OrbStack first."
@@ -81,6 +103,28 @@ wait_ready() {
 }
 
 start_api() {
+  if launchd_available; then
+    if launchd_running "$API_LAUNCHD_LABEL"; then
+      echo "API already running under launchd."
+      return
+    fi
+    mkdir -p "$PID_DIR"
+    launchctl submit -l "$API_LAUNCHD_LABEL" \
+      -o "$WATCHER_DIR/api.log" -e "$WATCHER_DIR/api.log" -- \
+      /usr/bin/env \
+      "UAMS_VAULT_PATH=${UAMS_VAULT_PATH:-$ROOT_DIR}" \
+      "PYTHONPATH=$WATCHER_DIR" \
+      "$VENV_DIR/bin/python" -m uvicorn api.main:app \
+      --app-dir "$WATCHER_DIR" \
+      --host "${UAMS_API_HOST:-127.0.0.1}" --port "${UAMS_API_PORT:-8000}"
+    sleep 1
+    if launchd_running "$API_LAUNCHD_LABEL"; then
+      echo "API started under launchd."
+      return
+    fi
+    echo "API failed to stay running. Check $WATCHER_DIR/api.log." >&2
+    exit 1
+  fi
   if is_running "$API_PID_FILE" "uvicorn .*api.main:app|python.*-m uvicorn .*api.main:app"; then
     echo "API already running on PID $(cat "$API_PID_FILE")."
     return
@@ -98,6 +142,26 @@ start_api() {
 }
 
 start_watcher() {
+  if launchd_available; then
+    if launchd_running "$WATCHER_LAUNCHD_LABEL"; then
+      echo "Watcher already running under launchd."
+      return
+    fi
+    mkdir -p "$PID_DIR"
+    launchctl submit -l "$WATCHER_LAUNCHD_LABEL" \
+      -o "$WATCHER_DIR/watcher.log" -e "$WATCHER_DIR/watcher.log" -- \
+      /usr/bin/env \
+      "UAMS_VAULT_PATH=${UAMS_VAULT_PATH:-$ROOT_DIR}" \
+      "PYTHONPATH=$WATCHER_DIR" \
+      "$VENV_DIR/bin/python" "$WATCHER_DIR/main.py"
+    sleep 1
+    if launchd_running "$WATCHER_LAUNCHD_LABEL"; then
+      echo "Watcher started under launchd."
+      return
+    fi
+    echo "Watcher failed to stay running. Check $WATCHER_DIR/watcher.log." >&2
+    exit 1
+  fi
   if is_running "$WATCHER_PID_FILE" "python.*main.py"; then
     echo "Watcher already running on PID $(cat "$WATCHER_PID_FILE")."
     return
@@ -143,8 +207,13 @@ case "${1:-}" in
     echo "UAMS is online: http://${UAMS_API_HOST:-127.0.0.1}:${UAMS_API_PORT:-8000}/docs"
     ;;
   stop)
-    stop_one "Watcher" "$WATCHER_PID_FILE" "python.*main.py"
-    stop_one "API" "$API_PID_FILE" "uvicorn .*api.main:app|python.*-m uvicorn .*api.main:app"
+    if launchd_available; then
+      stop_launchd "Watcher" "$WATCHER_LAUNCHD_LABEL"
+      stop_launchd "API" "$API_LAUNCHD_LABEL"
+    else
+      stop_one "Watcher" "$WATCHER_PID_FILE" "python.*main.py"
+      stop_one "API" "$API_PID_FILE" "uvicorn .*api.main:app|python.*-m uvicorn .*api.main:app"
+    fi
     if [ "${2:-}" = "--infra" ]; then
       compose="$(compose_cmd)"
       (cd "$WATCHER_DIR" && $compose stop postgres qdrant)
@@ -156,8 +225,13 @@ case "${1:-}" in
     "$0" start
     ;;
   status)
-    if is_running "$API_PID_FILE" "uvicorn .*api.main:app|python.*-m uvicorn .*api.main:app"; then echo "API: running on PID $(cat "$API_PID_FILE")"; else echo "API: stopped"; fi
-    if is_running "$WATCHER_PID_FILE" "python.*main.py"; then echo "Watcher: running on PID $(cat "$WATCHER_PID_FILE")"; else echo "Watcher: stopped"; fi
+    if launchd_available; then
+      if launchd_running "$API_LAUNCHD_LABEL"; then echo "API: running under launchd"; else echo "API: stopped"; fi
+      if launchd_running "$WATCHER_LAUNCHD_LABEL"; then echo "Watcher: running under launchd"; else echo "Watcher: stopped"; fi
+    else
+      if is_running "$API_PID_FILE" "uvicorn .*api.main:app|python.*-m uvicorn .*api.main:app"; then echo "API: running on PID $(cat "$API_PID_FILE")"; else echo "API: stopped"; fi
+      if is_running "$WATCHER_PID_FILE" "python.*main.py"; then echo "Watcher: running on PID $(cat "$WATCHER_PID_FILE")"; else echo "Watcher: stopped"; fi
+    fi
     if ! docker info >/dev/null 2>&1; then
       echo "PostgreSQL/Qdrant: unknown (Docker is not running)"
     else

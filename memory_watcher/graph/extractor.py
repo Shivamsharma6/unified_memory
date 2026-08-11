@@ -22,6 +22,8 @@ def normalize_entity_key(value: str) -> str:
 
 
 def clean_wikilink(value: str) -> str:
+    while isinstance(value, (list, tuple)) and len(value) == 1:
+        value = value[0]
     cleaned = str(value).strip()
     match = _WIKILINK_PATTERN.fullmatch(cleaned)
     if match:

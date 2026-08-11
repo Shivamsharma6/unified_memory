@@ -3,7 +3,7 @@ import os
 import re
 import yaml
 from datetime import datetime, timedelta, date
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 from pathlib import Path
 
 from llm.provider import LLMProvider, LLMConfig
@@ -31,7 +31,12 @@ class MemoryDistiller:
     Handles the lifecycle: raw -> summarized -> distilled -> proceduralized
     """
 
-    def __init__(self, vault_path: str, llm_config: Optional[LLMConfig] = None):
+    def __init__(
+        self,
+        vault_path: str,
+        llm_config: Optional[LLMConfig] = None,
+        now: Optional[Callable[[], datetime]] = None,
+    ):
         self.vault_path = Path(vault_path)
         self.daily_dir = self.vault_path / "Daily"
         self.concepts_dir = self.vault_path / "Concepts"
@@ -39,6 +44,7 @@ class MemoryDistiller:
         self.archive_dir = self.vault_path / "Archive"
         self._llm_config = llm_config
         self._llm: Optional[LLMProvider] = None
+        self._now = now or datetime.now
 
         # Ensure dirs exist
         for d in [self.daily_dir, self.concepts_dir, self.procedures_dir, self.archive_dir]:
@@ -126,7 +132,7 @@ class MemoryDistiller:
         Scans raw daily logs, scores them, ages them, and promotes them.
         """
         logger.info("Starting Autonomous Memory Distillation Cycle...")
-        now = datetime.now()
+        now = self._now()
 
         for file in self.daily_dir.glob("*.md"):
             if file.name == "README.md": continue

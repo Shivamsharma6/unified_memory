@@ -80,6 +80,15 @@ def test_related_to_is_an_explicit_evidenced_claim():
     assert claim.evidence_memory_id == projection.memory_id
 
 
+def test_unquoted_obsidian_wikilinks_from_yaml_are_normalized_as_entities():
+    projection = extract_projection(
+        record("Uses semantic retrieval.", "related_to:\n  - [[Qdrant]]\n")
+    )
+
+    assert projection.claims[0].object == "Qdrant"
+    assert "qdrant" in {entity.normalized_key for entity in projection.entities}
+
+
 def test_candidate_relationships_are_excluded_from_retrieval_claims():
     projection = extract_projection(
         record(

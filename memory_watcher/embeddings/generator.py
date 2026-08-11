@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import hashlib
+import math
 from typing import List, Optional
 from tenacity import retry, wait_exponential, stop_after_attempt
 from models.document import Document
@@ -49,10 +50,48 @@ class EmbeddingGenerator:
 
     @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
     async def _generate_ollama(self, texts: List[str]) -> List[List[float]]:
-        # Generate embeddings concurrently for each text chunk
         async def _embed_single(text: str) -> List[float]:
-            response = await self.ollama_client.embeddings(model=self.model_name, prompt=text)
-            return response['embedding']
+            try:
+                response = await self.ollama_client.embeddings(
+                    model=self.model_name,
+                    prompt=text,
+                )
+                return response["embedding"]
+            except Exception as error:
+                message = str(error).casefold()
+                context_overflow = (
+                    "input length" in message and "context length" in message
+                )
+                if not context_overflow or len(text) < 2:
+                    raise
+
+                midpoint = len(text) // 2
+                whitespace = text.rfind(" ", len(text) // 4, midpoint + 1)
+                split_at = whitespace if whitespace > 0 else midpoint
+                left = text[:split_at].strip()
+                right = text[split_at:].strip()
+                if not left or not right:
+                    left, right = text[:midpoint], text[midpoint:]
+                left_vector, right_vector = await asyncio.gather(
+                    _embed_single(left),
+                    _embed_single(right),
+                )
+                total_weight = len(left) + len(right)
+                combined = [
+                    (
+                        left_value * len(left)
+                        + right_value * len(right)
+                    )
+                    / total_weight
+                    for left_value, right_value in zip(left_vector, right_vector)
+                ]
+                magnitude = math.sqrt(sum(value * value for value in combined))
+                return (
+                    [value / magnitude for value in combined]
+                    if magnitude
+                    else combined
+                )
+
         return await asyncio.gather(*(_embed_single(t) for t in texts))
 
     @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))

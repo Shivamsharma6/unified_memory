@@ -75,6 +75,7 @@ async def run_migration(args) -> dict:
 
         vectors = QdrantStore()
         await vectors.initialize_v2_collection()
+        report["vector_commands_requeued"] = await store.requeue_failed_vector_commands()
         embedder = EmbeddingGenerator()
         worker = VectorWorker(store, vectors, embedder, batch_size=10)
         deadline = time.monotonic() + args.drain_timeout
@@ -125,6 +126,7 @@ def main() -> int:
                 f"deleted={reconciliation['deleted']}"
             )
             print(f"Vector commands processed: {report['vector_commands_processed']}")
+            print(f"Vector commands requeued: {report['vector_commands_requeued']}")
             print(f"Ready: {report['readiness']['ready']}")
             print(f"Drift: {report['readiness']['drift']['total']}")
     readiness = report.get("readiness")

@@ -68,7 +68,14 @@ class SemanticChunker:
         doc.frontmatter = frontmatter
         
         raw_tags = frontmatter.get("tags", [])
-        doc_tags = raw_tags if isinstance(raw_tags, list) else [raw_tags]
+        tag_values = raw_tags if isinstance(raw_tags, list) else [raw_tags]
+        doc_tags = list(
+            dict.fromkeys(
+                str(tag).strip()
+                for tag in tag_values
+                if tag is not None and str(tag).strip()
+            )
+        )
         doc_category = frontmatter.get("type", None)
         timestamp_data = frontmatter.get("timestamps", {})
         if not isinstance(timestamp_data, dict):
@@ -105,7 +112,7 @@ class SemanticChunker:
             
             for sub_text in sub_chunks:
                 entities = self._extract_entities(sub_text)
-                tags = list(set(doc_tags + self._extract_tags(sub_text)))
+                tags = list(dict.fromkeys(doc_tags + self._extract_tags(sub_text)))
                 context_hierarchy = list(hierarchy) if hierarchy else [document_title]
                 if context_hierarchy[0] != document_title:
                     context_hierarchy.insert(0, document_title)

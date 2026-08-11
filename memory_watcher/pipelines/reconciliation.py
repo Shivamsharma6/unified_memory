@@ -25,6 +25,14 @@ EXCLUDED_DIRECTORIES = {
     "memory_watcher",
     "venv",
 }
+PROJECTION_VERSION = 2
+
+
+def projection_hash(raw_markdown: str, *, version: int = PROJECTION_VERSION) -> str:
+    """Fingerprint Markdown together with the derived-projection schema version."""
+
+    payload = f"uams-projection-v{version}\0{raw_markdown}".encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -121,7 +129,7 @@ class Reconciler:
 
                 raw_markdown = resolved.read_text(encoding="utf-8")
                 record = parse_memory(resolved, raw_markdown, vault_root=self.vault_root)
-                content_hash = hashlib.sha256(raw_markdown.encode("utf-8")).hexdigest()
+                content_hash = projection_hash(raw_markdown)
                 document = self.chunker.chunk(
                     Document(path=record.vault_path, raw_content=raw_markdown)
                 )
