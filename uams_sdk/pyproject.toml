@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "uams-sdk"
-version = "1.0.2"
-description = "Official Python SDK and MCP server for the Unified Agent Memory System (UAMS)."
+version = "1.1.0"
+description = "Async Python SDK and MCP server for shared, durable AI-agent memory with hybrid retrieval."
 readme = "README.md"
 authors = [{ name = "Shivam Sharma" }]
 requires-python = ">=3.11"
+keywords = ["ai agents", "memory", "mcp", "rag", "multi-agent"]
 dependencies = [
     "httpx>=0.27.0",
     "pydantic>=2.0.0",
@@ -27,6 +28,8 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/Shivamsharma6/unified_memory"
 Repository = "https://github.com/Shivamsharma6/unified_memory.git"
+Documentation = "https://github.com/Shivamsharma6/unified_memory#readme"
+Issues = "https://github.com/Shivamsharma6/unified_memory/issues"
 
 [project.scripts]
 uams-mcp = "uams_sdk.mcp_server:main"
