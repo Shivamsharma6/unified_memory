@@ -9,6 +9,47 @@ API_PID_FILE="$PID_DIR/api.pid"
 WATCHER_PID_FILE="$PID_DIR/watcher.pid"
 API_LAUNCHD_LABEL="com.uams.api"
 WATCHER_LAUNCHD_LABEL="com.uams.watcher"
+ENV_FILE="$ROOT_DIR/.env"
+
+# The repository-local .env file is the supported configuration boundary for
+# every launcher command. It is trusted shell-compatible configuration; export
+# its assignments so direct child processes and Docker Compose see the same
+# values.
+if [ -f "$ENV_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
+
+# launchctl does not reliably preserve the environment of the invoking shell.
+# Resolve and pass the complete runtime configuration to both long-lived jobs.
+LAUNCHD_ENV=(
+  "UAMS_VAULT_PATH=${UAMS_VAULT_PATH:-$ROOT_DIR}"
+  "UAMS_API_HOST=${UAMS_API_HOST:-127.0.0.1}"
+  "UAMS_API_PORT=${UAMS_API_PORT:-8000}"
+  "UAMS_API_URL=${UAMS_API_URL:-http://localhost:${UAMS_API_PORT:-8000}}"
+  "UAMS_POSTGRES_HOST=${UAMS_POSTGRES_HOST:-127.0.0.1}"
+  "UAMS_POSTGRES_PORT=${UAMS_POSTGRES_PORT:-5432}"
+  "UAMS_POSTGRES_DB=${UAMS_POSTGRES_DB:-uams}"
+  "UAMS_POSTGRES_USER=${UAMS_POSTGRES_USER:-uams}"
+  "UAMS_POSTGRES_PASSWORD=${UAMS_POSTGRES_PASSWORD:-uams-local-only}"
+  "UAMS_POSTGRES_POOL_MIN=${UAMS_POSTGRES_POOL_MIN:-1}"
+  "UAMS_POSTGRES_POOL_MAX=${UAMS_POSTGRES_POOL_MAX:-10}"
+  "UAMS_POSTGRES_CONNECT_TIMEOUT=${UAMS_POSTGRES_CONNECT_TIMEOUT:-5}"
+  "QDRANT_HOST=${QDRANT_HOST:-127.0.0.1}"
+  "QDRANT_HTTP_PORT=${QDRANT_HTTP_PORT:-6333}"
+  "QDRANT_GRPC_PORT=${QDRANT_GRPC_PORT:-6334}"
+  "UAMS_EMBED_PROVIDER=${UAMS_EMBED_PROVIDER:-ollama}"
+  "UAMS_EMBED_MODEL=${UAMS_EMBED_MODEL:-mxbai-embed-large:335m}"
+  "UAMS_EMBED_DIMENSION=${UAMS_EMBED_DIMENSION:-1024}"
+  "UAMS_EMBED_API_KEY=${UAMS_EMBED_API_KEY:-}"
+  "UAMS_LLM_PROVIDER=${UAMS_LLM_PROVIDER:-ollama}"
+  "UAMS_LLM_BASE_URL=${UAMS_LLM_BASE_URL:-http://localhost:11434}"
+  "UAMS_LLM_MODEL=${UAMS_LLM_MODEL:-gemma4:12b-mlx}"
+  "UAMS_LLM_API_KEY=${UAMS_LLM_API_KEY:-}"
+  "PYTHONPATH=$WATCHER_DIR"
+)
 
 usage() {
   echo "Usage: ./uams {install|start|stop [--infra]|restart|status|migrate|index|logs|mcp|mcp-config|doctor|integrate}"
@@ -112,8 +153,7 @@ start_api() {
     launchctl submit -l "$API_LAUNCHD_LABEL" \
       -o "$WATCHER_DIR/api.log" -e "$WATCHER_DIR/api.log" -- \
       /usr/bin/env \
-      "UAMS_VAULT_PATH=${UAMS_VAULT_PATH:-$ROOT_DIR}" \
-      "PYTHONPATH=$WATCHER_DIR" \
+      "${LAUNCHD_ENV[@]}" \
       "$VENV_DIR/bin/python" -m uvicorn api.main:app \
       --app-dir "$WATCHER_DIR" \
       --host "${UAMS_API_HOST:-127.0.0.1}" --port "${UAMS_API_PORT:-8000}"
@@ -151,8 +191,7 @@ start_watcher() {
     launchctl submit -l "$WATCHER_LAUNCHD_LABEL" \
       -o "$WATCHER_DIR/watcher.log" -e "$WATCHER_DIR/watcher.log" -- \
       /usr/bin/env \
-      "UAMS_VAULT_PATH=${UAMS_VAULT_PATH:-$ROOT_DIR}" \
-      "PYTHONPATH=$WATCHER_DIR" \
+      "${LAUNCHD_ENV[@]}" \
       "$VENV_DIR/bin/python" "$WATCHER_DIR/main.py"
     sleep 1
     if launchd_running "$WATCHER_LAUNCHD_LABEL"; then
