@@ -1,22 +1,3 @@
----
-type: semantic
-status: active
-aliases:
-  - UAMS
-  - Unified Memory
-tags:
-  - "#uams"
-  - "#architecture"
-  - "#operations"
-entities:
-  - "[[Unified Agent Memory System]]"
-  - "[[PostgreSQL]]"
-  - "[[Qdrant]]"
-timestamps:
-  created: 2026-06-10
-  updated: 2026-08-11
----
-
 # Unified Agent Memory System
 
 **Unified Agent Memory System (UAMS)** is a local-first shared brain for AI agents. It gives tools like OpenClaw, Hermes, Claude Code, Codex, VoiceAI, and custom agents one durable memory layer for codebase knowledge, bug-fix history, procedures, decisions, and entity relationships.
