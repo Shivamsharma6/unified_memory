@@ -36,3 +36,4 @@ jobs:
         with:
           packages-dir: uams_sdk/dist/
           password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true
