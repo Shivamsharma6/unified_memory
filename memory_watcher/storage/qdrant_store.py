@@ -129,6 +129,57 @@ class QdrantStore:
             wait=True,
         )
 
+    async def create_versioned_collection(self, collection_name: str, vector_size: int) -> None:
+        """Create a new versioned vector collection with required payload indices."""
+        exists = await self.client.collection_exists(collection_name)
+        if not exists:
+            logger.info("Creating versioned collection: %s (dim=%d)", collection_name, vector_size)
+            await self.client.create_collection(
+                collection_name=collection_name,
+                vectors_config=models.VectorParams(
+                    size=vector_size,
+                    distance=models.Distance.COSINE,
+                ),
+            )
+        for field_name in (
+            "memory_id",
+            "revision_id",
+            "memory_type",
+            "project",
+            "source_agent",
+            "entity_keys",
+        ):
+            await self.client.create_payload_index(
+                collection_name=collection_name,
+                field_name=field_name,
+                field_schema=models.PayloadSchemaType.KEYWORD,
+            )
+
+    async def switch_active_alias(self, target_collection: str, alias_name: str = "memory_chunks_v2") -> None:
+        """Atomically point alias_name to target_collection."""
+        await self.client.update_collection_aliases(
+            change_aliases_operations=[
+                models.CreateAliasOperation(
+                    create_alias=models.CreateAlias(
+                        collection_name=target_collection,
+                        alias_name=alias_name,
+                    )
+                )
+            ]
+        )
+        logger.info("Switched alias %s -> %s", alias_name, target_collection)
+
+    async def delete_orphaned_points(self, point_ids: List[str | uuid.UUID]) -> None:
+        """Delete a batch of specific point IDs from the vector collection."""
+        if not point_ids:
+            return
+        str_ids = [str(pid) for pid in point_ids]
+        await self.client.delete(
+            collection_name=self.v2_collection,
+            points_selector=models.PointIdsList(points=str_ids),
+            wait=True,
+        )
+
     async def delete_memory(self, memory_id: uuid.UUID) -> None:
         await self.client.delete(
             collection_name=self.v2_collection,

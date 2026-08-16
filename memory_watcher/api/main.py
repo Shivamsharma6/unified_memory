@@ -6,6 +6,7 @@ from api.routers.identity import router as identity_router
 from api.routers.quality import router as quality_router
 from api.routers.memory_edit import router as memory_edit_router
 from api.routers.profiles import router as profiles_router
+from api.routers.validation import router as validation_router
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from api.models import SearchRequest, SearchResponse, RememberRequest, SummarizeRequest, ContextRequest, ProcedureRequest
@@ -15,7 +16,7 @@ from api.retrieval.pipeline import RetrievalPipeline
 from llm.provider import LLMProvider, LLMConfig, MODEL_ROLES, get_llm_config
 from pipelines.ingestion import IngestionPipeline
 from identity.store import IdentityStore
-from api.readiness import assess_readiness
+from api.readiness import assess_readiness, assess_lightweight_readiness, assess_deep_projection_drift
 
 app = FastAPI(
     title="Unified Agent Memory API",
@@ -27,6 +28,7 @@ app.include_router(identity_router)
 app.include_router(quality_router)
 app.include_router(memory_edit_router)
 app.include_router(profiles_router)
+app.include_router(validation_router)
 
 pipeline = RetrievalPipeline()
 ingestion_pipeline = IngestionPipeline()
@@ -187,9 +189,16 @@ async def health_check():
     return {"status": status, "components": components}
 
 
+@app.get("/live", tags=["System"])
+async def liveness_check():
+    """Ultra-lightweight liveness probe checking process responsiveness (<1ms)."""
+    return {"status": "alive"}
+
+
 @app.get("/ready", tags=["System"])
 async def readiness_check():
-    if pipeline.hybrid is None:
+    """Fast readiness probe validating DB connection pool and queue backlog (<10ms)."""
+    if pipeline.hybrid is None or not pipeline._control_open:
         return JSONResponse(
             status_code=503,
             content={
@@ -201,13 +210,27 @@ async def readiness_check():
                     }
                 },
                 "jobs": {},
-                "drift": {"total": -1},
             },
+        )
+    report = await assess_lightweight_readiness(
+        pipeline.control_store,
+        pipeline.vector_store,
+    )
+    return JSONResponse(status_code=200 if report["ready"] else 503, content=report)
+
+
+@app.get("/projection-status", tags=["System"])
+async def projection_status_check():
+    """Deep diagnostic assessment verifying derived state consistency, drift, and orphaned vectors."""
+    if pipeline.hybrid is None or not pipeline._control_open:
+        return JSONResponse(
+            status_code=503,
+            content={"ready": False, "detail": "control plane is not initialized"},
         )
     vault_root = Path(
         os.getenv("UAMS_VAULT_PATH", str(Path(__file__).resolve().parents[2]))
     )
-    report = await assess_readiness(
+    report = await assess_deep_projection_drift(
         vault_root,
         pipeline.control_store,
         pipeline.vector_store,
@@ -215,6 +238,7 @@ async def readiness_check():
         pipeline.reranker,
     )
     return JSONResponse(status_code=200 if report["ready"] else 503, content=report)
+
 
 @app.get("/llm-status", tags=["System"])
 async def llm_status():

@@ -106,14 +106,30 @@ class VectorWorker:
             except Exception as error:
                 logger.error("Vector command %s failed: %s", command.outbox_id, error)
                 await self.control_store.fail_vector_command(command, error)
+            await asyncio.sleep(0)
         return len(commands)
 
-    async def run_forever(self) -> None:
+    async def run_forever(self, *, auto_reclaim_interval: float = 300.0) -> None:
+        last_reclaim = 0.0
+        loop = asyncio.get_running_loop()
         while True:
             try:
+                now = loop.time()
+                if now - last_reclaim > auto_reclaim_interval:
+                    last_reclaim = now
+                    if hasattr(self.control_store, "auto_reclaim_failed_outbox"):
+                        try:
+                            reclaimed = await self.control_store.auto_reclaim_failed_outbox()
+                            if reclaimed > 0:
+                                logger.info("Auto-reclaimed %d failed vector commands", reclaimed)
+                        except Exception as e:
+                            logger.warning("Auto-reclaim check failed: %s", e)
+
                 processed = await self.run_once()
                 if not processed:
                     await asyncio.sleep(self.poll_interval)
+                else:
+                    await asyncio.sleep(0)
             except asyncio.CancelledError:
                 raise
             except Exception as error:

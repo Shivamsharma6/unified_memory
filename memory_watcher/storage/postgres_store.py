@@ -178,6 +178,8 @@ class PostgresStore:
         projection,
         document_status: str,
         event_type: str,
+        mtime_ns: int | None = None,
+        file_size: int | None = None,
     ) -> StageRevisionResult:
         """Stage one complete revision without changing the active revision."""
 
@@ -202,15 +204,17 @@ class PostgresStore:
 
                 await connection.execute(
                     """
-                    INSERT INTO documents (memory_id, path, memory_type, status)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO documents (memory_id, path, memory_type, status, mtime_ns, file_size)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     ON CONFLICT (memory_id) DO UPDATE SET
                         path = EXCLUDED.path,
                         memory_type = EXCLUDED.memory_type,
                         status = EXCLUDED.status,
+                        mtime_ns = COALESCE(EXCLUDED.mtime_ns, documents.mtime_ns),
+                        file_size = COALESCE(EXCLUDED.file_size, documents.file_size),
                         updated_at = now()
                     """,
-                    (record.memory_id, record.vault_path, record.memory_type, document_status),
+                    (record.memory_id, record.vault_path, record.memory_type, document_status, mtime_ns, file_size),
                 )
                 await connection.execute(
                     """
@@ -1512,3 +1516,94 @@ class PostgresStore:
             "point_ids": point_ids,
             "expected_points": len(point_ids),
         }
+
+    async def get_document_file_stats(self) -> dict[str, dict[str, Any]]:
+        """Return a mapping of vault path to cached filesystem stats and revision metadata."""
+        async with self.pool.connection() as connection:
+            result = await connection.execute(
+                """
+                SELECT d.path, d.memory_id, d.status, d.mtime_ns, d.file_size,
+                       d.current_revision_id, r.content_hash
+                FROM documents d
+                LEFT JOIN document_revisions r ON d.current_revision_id = r.revision_id
+                """
+            )
+            rows = await result.fetchall()
+        return {
+            row["path"]: {
+                "memory_id": row["memory_id"],
+                "status": row["status"],
+                "mtime_ns": row["mtime_ns"],
+                "file_size": row["file_size"],
+                "current_revision_id": row["current_revision_id"],
+                "content_hash": row["content_hash"],
+            }
+            for row in rows
+        }
+
+    async def update_document_file_stat(
+        self,
+        memory_id: uuid.UUID,
+        mtime_ns: int,
+        file_size: int,
+    ) -> None:
+        """Update file stat metadata for an active document."""
+        async with self.pool.connection() as connection:
+            await connection.execute(
+                """
+                UPDATE documents
+                SET mtime_ns = %s, file_size = %s, updated_at = now()
+                WHERE memory_id = %s
+                """,
+                (mtime_ns, file_size, memory_id),
+            )
+
+    async def clean_orphaned_staged_revisions(self, older_than_seconds: int = 3600) -> int:
+        """Prune revisions that were staged but never activated and have exceeded their timeout window."""
+        async with self.pool.connection() as connection:
+            async with connection.transaction():
+                result = await connection.execute(
+                    """
+                    DELETE FROM document_revisions
+                    WHERE state = 'staged'
+                      AND created_at < now() - (%s * interval '1 second')
+                    RETURNING revision_id
+                    """,
+                    (older_than_seconds,),
+                )
+                rows = await result.fetchall()
+                return len(rows)
+
+    async def auto_reclaim_failed_outbox(
+        self,
+        max_reclaim: int = 50,
+        cooldown_seconds: int = 1800,
+    ) -> int:
+        """Automatically requeue failed outbox commands that have completed their cooldown window."""
+        async with self.pool.connection() as connection:
+            async with connection.transaction():
+                result = await connection.execute(
+                    """
+                    UPDATE vector_outbox
+                    SET status = 'pending', available_at = now(),
+                        locked_at = NULL, locked_by = NULL, attempts = 0
+                    WHERE status = 'failed'
+                      AND available_at < now() - (%s * interval '1 second')
+                    RETURNING revision_id
+                    LIMIT %s
+                    """,
+                    (cooldown_seconds, max_reclaim),
+                )
+                rows = await result.fetchall()
+                revision_ids = [r["revision_id"] for r in rows if r["revision_id"] is not None]
+                if revision_ids:
+                    await connection.execute(
+                        """
+                        UPDATE ingestion_jobs
+                        SET status = 'retrying', finished_at = NULL, updated_at = now()
+                        WHERE revision_id = ANY(%s) AND status = 'failed'
+                        """,
+                        (revision_ids,),
+                    )
+                return len(rows)
+

@@ -44,7 +44,55 @@ def _markdown_state(vault_root: Path) -> tuple[set, list[str]]:
     return memory_ids, malformed
 
 
-async def assess_readiness(
+async def assess_lightweight_readiness(
+    control_store,
+    vector_store,
+) -> dict:
+    """Fast liveness/readiness assessment checking connection pools and queue backlogs (<10ms)."""
+    components = {}
+    pg_ok = False
+    jobs = {
+        "pending_jobs": 0,
+        "failed_jobs": 0,
+        "pending_outbox": 0,
+        "failed_outbox": 0,
+        "oldest_pending_seconds": 0.0,
+    }
+
+    try:
+        if await control_store.ping():
+            components["postgresql"] = {"status": "ok"}
+            pg_ok = True
+            jobs = await control_store.readiness_metrics()
+        else:
+            components["postgresql"] = {"status": "unavailable", "detail": "ping returned false"}
+    except Exception as error:
+        components["postgresql"] = {"status": "unavailable", "detail": str(error)}
+
+    qdrant_ok = False
+    try:
+        collection_exists = await vector_store.client.collection_exists(vector_store.v2_collection)
+        if collection_exists:
+            components["qdrant"] = {"status": "ok", "collection": vector_store.v2_collection}
+            qdrant_ok = True
+        else:
+            components["qdrant"] = {
+                "status": "unavailable",
+                "detail": f"collection {vector_store.v2_collection} does not exist",
+            }
+    except Exception as error:
+        components["qdrant"] = {"status": "unavailable", "detail": str(error)}
+
+    ready = pg_ok and qdrant_ok and jobs.get("failed_outbox", 0) == 0
+    return {
+        "ready": ready,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "components": components,
+        "jobs": jobs,
+    }
+
+
+async def assess_deep_projection_drift(
     vault_root: str | Path,
     control_store,
     vector_store,
@@ -153,3 +201,8 @@ async def assess_readiness(
         "jobs": jobs,
         "drift": drift,
     }
+
+
+# Backwards compatibility alias
+assess_readiness = assess_deep_projection_drift
+

@@ -135,19 +135,25 @@ class MemoryWatcher:
             except Exception as error:
                 logger.error("Periodic reconciliation failed: %s", error)
 
+    async def _run_startup_reconciliation(self):
+        try:
+            startup_result = await self.reconciler.startup_reconcile()
+            logger.info(
+                "Startup reconciliation complete: discovered=%s staged=%s unchanged=%s failed=%s deleted=%s",
+                startup_result.discovered,
+                startup_result.staged,
+                startup_result.unchanged,
+                startup_result.failed,
+                startup_result.deleted,
+            )
+        except Exception as error:
+            logger.error("Background startup reconciliation failed: %s", error)
+
     async def start(self):
         await self.store.open()
         await self.store.migrate()
         await self.vector_worker.initialize()
-        startup_result = await self.reconciler.startup_reconcile()
-        logger.info(
-            "Startup reconciliation: discovered=%s staged=%s unchanged=%s failed=%s deleted=%s",
-            startup_result.discovered,
-            startup_result.staged,
-            startup_result.unchanged,
-            startup_result.failed,
-            startup_result.deleted,
-        )
+        
         loop = asyncio.get_running_loop()
         handler = MemoryEventHandler(self.queue, loop, self.target_dir)
         observer = Observer()
@@ -160,6 +166,7 @@ class MemoryWatcher:
         worker_task = asyncio.create_task(self._debounced_worker())
         periodic_task = asyncio.create_task(self._periodic_reconciliation())
         vector_task = asyncio.create_task(self.vector_worker.run_forever())
+        startup_task = asyncio.create_task(self._run_startup_reconciliation())
         
         try:
             while True:
@@ -172,11 +179,13 @@ class MemoryWatcher:
             worker_task.cancel()
             periodic_task.cancel()
             vector_task.cancel()
+            startup_task.cancel()
             await asyncio.gather(
                 queue_task,
                 worker_task,
                 periodic_task,
                 vector_task,
+                startup_task,
                 return_exceptions=True,
             )
             await self._distiller.shutdown()

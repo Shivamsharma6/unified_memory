@@ -52,7 +52,7 @@ LAUNCHD_ENV=(
 )
 
 usage() {
-  echo "Usage: ./uams {install|start|stop [--infra]|restart|status|migrate|index|logs|mcp|mcp-config|doctor|integrate}"
+  echo "Usage: ./uams {install|start|stop [--infra]|restart|status|migrate|embed-upgrade|lint|projection-status|index|logs|mcp|mcp-config|doctor|integrate}"
 }
 
 compose_cmd() {
@@ -289,6 +289,24 @@ case "${1:-}" in
     shift
     PYTHONPATH="$WATCHER_DIR" exec "$VENV_DIR/bin/python" \
       "$WATCHER_DIR/scripts/migrate_control_plane.py" "$@"
+    ;;
+  embed-upgrade)
+    require_venv
+    start_infra
+    shift
+    PYTHONPATH="$WATCHER_DIR" exec "$VENV_DIR/bin/python" \
+      "$WATCHER_DIR/scripts/embed_upgrade.py" "$@"
+    ;;
+  lint)
+    require_venv
+    shift
+    PYTHONPATH="$WATCHER_DIR" exec "$VENV_DIR/bin/python" \
+      "$WATCHER_DIR/scripts/lint_vault.py" "$@"
+    ;;
+  projection-status)
+    require_venv
+    start_infra
+    curl -fsS "http://${UAMS_API_HOST:-127.0.0.1}:${UAMS_API_PORT:-8000}/projection-status" | python3 -m json.tool 2>/dev/null || curl -sS "http://${UAMS_API_HOST:-127.0.0.1}:${UAMS_API_PORT:-8000}/projection-status"
     ;;
   index)
     require_venv

@@ -62,6 +62,8 @@ class Reconciler:
         self.store = store
         self.chunker = SemanticChunker()
         self._memory_locks: dict[uuid.UUID, asyncio.Lock] = {}
+        self.is_scanning: bool = False
+        self.last_scan_result: ScanResult | None = None
 
     def iter_memory_paths(self) -> list[Path]:
         paths: list[Path] = []
@@ -97,7 +99,13 @@ class Reconciler:
         except Exception:
             pass
 
-    async def reconcile_path(self, path: str | Path) -> ReconcileResult:
+    async def reconcile_path(
+        self,
+        path: str | Path,
+        *,
+        mtime_ns: int | None = None,
+        file_size: int | None = None,
+    ) -> ReconcileResult:
         try:
             vault_path = self._vault_path(path)
         except ValueError as error:
@@ -111,6 +119,15 @@ class Reconciler:
             except Exception as error:
                 await self._record_failure(vault_path, error)
                 return ReconcileResult(status="failed", path=vault_path, error=str(error))
+
+        try:
+            stat = resolved.stat()
+            if mtime_ns is None:
+                mtime_ns = stat.st_mtime_ns
+            if file_size is None:
+                file_size = stat.st_size
+        except OSError:
+            pass
 
         record = None
         try:
@@ -143,6 +160,8 @@ class Reconciler:
                     projection=projection,
                     document_status=document_status,
                     event_type="archive" if document_status == "archived" else "upsert",
+                    mtime_ns=mtime_ns,
+                    file_size=file_size,
                 )
                 return ReconcileResult(
                     status="staged" if staged.created else "unchanged",
@@ -159,25 +178,73 @@ class Reconciler:
                     error=str(error),
                 )
 
-    async def scan(self) -> ScanResult:
-        paths = self.iter_memory_paths()
-        results = [await self.reconcile_path(path) for path in paths]
-        seen = {result.memory_id for result in results if result.memory_id is not None}
-        unidentified_failure = any(
-            result.status == "failed" and result.memory_id is None for result in results
-        )
-        deleted_ids = [] if unidentified_failure else await self.store.mark_missing_documents(seen)
-        return ScanResult(
-            discovered=len(paths),
-            staged=sum(result.status == "staged" for result in results),
-            unchanged=sum(result.status == "unchanged" for result in results),
-            failed=sum(result.status == "failed" for result in results),
-            archived=sum(
-                result.status in {"staged", "unchanged"} and result.path.startswith("Archive/")
-                for result in results
-            ),
-            deleted=len(deleted_ids),
-        )
+    async def scan(self, *, force: bool = False) -> ScanResult:
+        self.is_scanning = True
+        try:
+            paths = self.iter_memory_paths()
+            cached_stats = {}
+            if not force and self.store and hasattr(self.store, "get_document_file_stats"):
+                try:
+                    cached_stats = await self.store.get_document_file_stats()
+                except Exception:
+                    cached_stats = {}
+
+            results: list[ReconcileResult] = []
+            for path in paths:
+                vault_path = self._vault_path(path)
+                try:
+                    stat = path.stat()
+                except OSError:
+                    results.append(await self.reconcile_path(path))
+                    continue
+
+                cached = cached_stats.get(vault_path)
+                if (
+                    cached
+                    and cached["status"] != "deleted"
+                    and cached["mtime_ns"] is not None
+                    and cached["mtime_ns"] == stat.st_mtime_ns
+                    and cached["file_size"] is not None
+                    and cached["file_size"] == stat.st_size
+                ):
+                    results.append(
+                        ReconcileResult(
+                            status="unchanged",
+                            path=vault_path,
+                            memory_id=cached["memory_id"],
+                            revision_id=cached["current_revision_id"],
+                        )
+                    )
+                else:
+                    results.append(
+                        await self.reconcile_path(
+                            path,
+                            mtime_ns=stat.st_mtime_ns,
+                            file_size=stat.st_size,
+                        )
+                    )
+
+            seen = {result.memory_id for result in results if result.memory_id is not None}
+            unidentified_failure = any(
+                result.status == "failed" and result.memory_id is None for result in results
+            )
+            deleted_ids = [] if unidentified_failure or not self.store else await self.store.mark_missing_documents(seen)
+            scan_res = ScanResult(
+                discovered=len(paths),
+                staged=sum(result.status == "staged" for result in results),
+                unchanged=sum(result.status == "unchanged" for result in results),
+                failed=sum(result.status == "failed" for result in results),
+                archived=sum(
+                    result.status in {"staged", "unchanged"} and result.path.startswith("Archive/")
+                    for result in results
+                ),
+                deleted=len(deleted_ids),
+            )
+            self.last_scan_result = scan_res
+            return scan_res
+        finally:
+            self.is_scanning = False
 
     async def startup_reconcile(self) -> ScanResult:
         return await self.scan()
+
