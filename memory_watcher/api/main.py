@@ -198,7 +198,7 @@ async def liveness_check():
 @app.get("/ready", tags=["System"])
 async def readiness_check():
     """Fast readiness probe validating DB connection pool and queue backlog (<10ms)."""
-    if pipeline.hybrid is None or not pipeline._control_open:
+    if pipeline.hybrid is None:
         return JSONResponse(
             status_code=503,
             content={
@@ -222,7 +222,7 @@ async def readiness_check():
 @app.get("/projection-status", tags=["System"])
 async def projection_status_check():
     """Deep diagnostic assessment verifying derived state consistency, drift, and orphaned vectors."""
-    if pipeline.hybrid is None or not pipeline._control_open:
+    if pipeline.hybrid is None:
         return JSONResponse(
             status_code=503,
             content={"ready": False, "detail": "control plane is not initialized"},
