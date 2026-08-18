@@ -17,7 +17,13 @@ class SemanticChunker:
         self.tag_pattern = re.compile(r'(?:^|\s)#([a-zA-Z0-9_-]+)')
         
     def _extract_entities(self, text: str) -> List[str]:
-        return list(set(self.wikilink_pattern.findall(text)))
+        raw = self.wikilink_pattern.findall(text)
+        entities = []
+        for ent in raw:
+            cleaned = ent.strip("[] \t\r\n").split("|", 1)[0].split("#", 1)[0].strip()
+            if cleaned and cleaned not in entities:
+                entities.append(cleaned)
+        return entities
 
     def _extract_tags(self, text: str) -> List[str]:
         return list(set(self.tag_pattern.findall(text)))

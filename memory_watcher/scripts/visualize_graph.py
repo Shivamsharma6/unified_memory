@@ -2,9 +2,19 @@ import json
 import networkx as nx
 from collections import Counter
 
+import os
+
 # Load the graph
-graph_path = "knowledge_graph.json"
+possible_paths = [
+    "knowledge_graph.json",
+    "memory_watcher/knowledge_graph.json",
+    os.path.join(os.path.dirname(__file__), "..", "knowledge_graph.json"),
+]
+graph_path = next((p for p in possible_paths if os.path.exists(p)), None)
+
 try:
+    if not graph_path:
+        raise FileNotFoundError("knowledge_graph.json not found in any expected location")
     with open(graph_path, "r") as f:
         data = json.load(f)
     
@@ -24,7 +34,7 @@ try:
     edges = list(G.edges(data=True))
     # Just show the last 15 edges to see the newly added stuff
     for u, v, d in edges[-15:]:
-        rel = d.get("relationship", "related_to")
+        rel = d.get("relation", d.get("relationship", "related_to"))
         print(f"[{u}] --({rel})--> [{v}]")
 
 except Exception as e:

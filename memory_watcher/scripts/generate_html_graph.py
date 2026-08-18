@@ -4,11 +4,16 @@ from pyvis.network import Network
 import os
 
 def generate_html():
-    graph_path = "knowledge_graph.json"
+    possible_paths = [
+        "knowledge_graph.json",
+        "memory_watcher/knowledge_graph.json",
+        os.path.join(os.path.dirname(__file__), "..", "knowledge_graph.json"),
+    ]
+    graph_path = next((p for p in possible_paths if os.path.exists(p)), None)
     out_path = "knowledge_graph_interactive.html"
     
-    if not os.path.exists(graph_path):
-        print(f"Error: {graph_path} not found.")
+    if not graph_path:
+        print(f"Error: knowledge_graph.json not found in any expected location.")
         return
         
     with open(graph_path, "r") as f:
@@ -41,7 +46,7 @@ def generate_html():
         
     # Add edges with labels
     for u, v, attributes in G.edges(data=True):
-        rel = attributes.get("relationship", "related_to")
+        rel = attributes.get("relation", attributes.get("relationship", "related_to"))
         net.add_edge(u, v, title=rel, label=rel, color="#666666")
         
     # Set physics options for a nice organic layout

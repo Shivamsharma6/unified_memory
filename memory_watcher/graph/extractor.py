@@ -32,6 +32,8 @@ def clean_wikilink(value: Any) -> str:
     match = _WIKILINK_PATTERN.fullmatch(cleaned)
     if match:
         cleaned = match.group("target")
+    else:
+        cleaned = cleaned.strip("[] \t\r\n")
     cleaned = cleaned.split("|", 1)[0].split("#", 1)[0]
     return unicodedata.normalize("NFKC", cleaned).strip()
 
@@ -221,7 +223,16 @@ class GraphExtractor:
         sentences = [s.strip() for s in re.split(r'(?<=[.!?\n])\s+', content) if s.strip()]
         
         for sentence in sentences:
-            entities_in_sentence = self.wikilink_pattern.findall(sentence)
+            raw_entities = self.wikilink_pattern.findall(sentence)
+            if not raw_entities:
+                continue
+            
+            entities_in_sentence = []
+            for raw_ent in raw_entities:
+                cleaned = clean_wikilink(raw_ent)
+                if cleaned and cleaned not in entities_in_sentence:
+                    entities_in_sentence.append(cleaned)
+                    
             if not entities_in_sentence:
                 continue
                 
@@ -235,7 +246,10 @@ class GraphExtractor:
             # Detect directed relationships between the document (or primary entity) and extracted entities
             for rel_name, pattern in self.rel_patterns.items():
                 matches = pattern.findall(sentence)
-                for target_ent in matches:
+                for raw_target in matches:
+                    target_ent = clean_wikilink(raw_target)
+                    if not target_ent:
+                        continue
                     # If multiple entities in sentence, assume the first one acts on the target
                     # Else the document acts on the target
                     source_ent = entities_in_sentence[0] if len(entities_in_sentence) > 1 and entities_in_sentence[0] != target_ent else doc_node
