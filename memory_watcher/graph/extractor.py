@@ -21,8 +21,12 @@ def normalize_entity_key(value: str) -> str:
     return " ".join(normalized.split()).casefold()
 
 
-def clean_wikilink(value: str) -> str:
-    while isinstance(value, (list, tuple)) and len(value) == 1:
+def clean_wikilink(value: Any) -> str:
+    if value is None:
+        return ""
+    while isinstance(value, (list, tuple)):
+        if len(value) == 0:
+            return ""
         value = value[0]
     cleaned = str(value).strip()
     match = _WIKILINK_PATTERN.fullmatch(cleaned)
@@ -30,6 +34,7 @@ def clean_wikilink(value: str) -> str:
         cleaned = match.group("target")
     cleaned = cleaned.split("|", 1)[0].split("#", 1)[0]
     return unicodedata.normalize("NFKC", cleaned).strip()
+
 
 
 @dataclass(frozen=True)
@@ -203,10 +208,14 @@ class GraphExtractor:
         
         # Extract explicit frontmatter relations
         if "related_to" in frontmatter:
-            for rel in frontmatter["related_to"]:
-                rel_clean = rel.replace("[[", "").replace("]]", "")
-                G.add_node(rel_clean, type="concept")
-                G.add_edge(doc_node, rel_clean, relation="related_to")
+            related_to = frontmatter["related_to"]
+            if not isinstance(related_to, (list, tuple)):
+                related_to = [related_to]
+            for rel in related_to:
+                rel_clean = clean_wikilink(rel)
+                if rel_clean:
+                    G.add_node(rel_clean, type="concept")
+                    G.add_edge(doc_node, rel_clean, relation="related_to")
 
         # Parse sentences for contextual relationships
         sentences = [s.strip() for s in re.split(r'(?<=[.!?\n])\s+', content) if s.strip()]

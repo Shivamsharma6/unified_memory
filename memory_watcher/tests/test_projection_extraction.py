@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from chunkers.semantic import SemanticChunker
-from graph.extractor import extract_projection, normalize_entity_key
+from graph.extractor import extract_projection, normalize_entity_key, GraphExtractor
 from models.document import Document
 from models.memory_record import parse_memory
 
@@ -106,3 +106,24 @@ def test_candidate_relationships_are_excluded_from_retrieval_claims():
 
     assert [claim.predicate for claim in projection.claims] == ["uses", "fixes"]
     assert [claim.predicate for claim in projection.retrieval_claims()] == ["uses"]
+
+
+def test_graph_extractor_handles_unquoted_and_nested_frontmatter_related_to():
+    extractor = GraphExtractor()
+    # Unquoted YAML [[Target]] parses as nested list [['Target']]
+    frontmatter = {
+        "related_to": [
+            [["ESP32"]],
+            "[[WiFi Sensing]]",
+            "Direct String",
+        ]
+    }
+    graph = extractor.extract_from_markdown("Projects/Test.md", "Content mentioning [[ESP32]].", frontmatter)
+    doc_node = "DOC:Projects/Test.md"
+    assert graph.has_node("ESP32")
+    assert graph.has_node("WiFi Sensing")
+    assert graph.has_node("Direct String")
+    assert graph.has_edge(doc_node, "ESP32")
+    assert graph.has_edge(doc_node, "WiFi Sensing")
+    assert graph.has_edge(doc_node, "Direct String")
+

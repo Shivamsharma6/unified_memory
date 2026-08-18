@@ -1587,10 +1587,13 @@ class PostgresStore:
                     UPDATE vector_outbox
                     SET status = 'pending', available_at = now(),
                         locked_at = NULL, locked_by = NULL, attempts = 0
-                    WHERE status = 'failed'
-                      AND available_at < now() - (%s * interval '1 second')
+                    WHERE outbox_id IN (
+                        SELECT outbox_id FROM vector_outbox
+                        WHERE status = 'failed'
+                          AND available_at < now() - (%s * interval '1 second')
+                        LIMIT %s
+                    )
                     RETURNING revision_id
-                    LIMIT %s
                     """,
                     (cooldown_seconds, max_reclaim),
                 )
