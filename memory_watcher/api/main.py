@@ -21,7 +21,7 @@ from api.readiness import assess_readiness, assess_lightweight_readiness, assess
 app = FastAPI(
     title="Unified Agent Memory API",
     description="Advanced Retrieval API for Hermes, OpenClaw, and VoiceAI",
-    version="1.1.1"
+    version="1.1.2"
 )
 app.include_router(graph_router)
 app.include_router(identity_router)

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "uams-sdk"
-version = "1.1.1"
+version = "1.1.2"
 description = "Async Python SDK and MCP server for shared, durable AI-agent memory with hybrid retrieval."
 readme = "README.md"
 authors = [{ name = "Shivam Sharma" }]
