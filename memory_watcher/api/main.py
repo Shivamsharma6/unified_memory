@@ -133,30 +133,61 @@ async def remember(request: RememberRequest):
 
         write_result = write_memory(final_req, vault_root=vault_path)
         path = getattr(write_result, "path", write_result)
+        index_status = "pending"
+        indexed = False
+        warning = None
         try:
             if pipeline.reconciler is not None:
                 reconcile_result = await pipeline.reconciler.reconcile_path(path)
-                indexed = reconcile_result.status in {"staged", "unchanged"}
+                index_status = reconcile_result.status
                 warning = reconcile_result.error
+
+                # If sync is requested and revision was staged, immediately vectorize and activate in Qdrant & Postgres
+                if (request.sync or getattr(final_req, "sync", False)) and reconcile_result.status == "staged":
+                    try:
+                        if (
+                            pipeline.embedder is not None
+                            and pipeline.vector_store is not None
+                            and pipeline.control_store is not None
+                        ):
+                            doc = parse_memory(path)
+                            chunks = pipeline.reconciler.chunker.chunk_document(doc)
+                            doc.chunks = chunks
+                            embedded_doc = await pipeline.embedder.embed(doc)
+                            await pipeline.vector_store.upsert_v2(embedded_doc.chunks)
+                            await pipeline.control_store.activate_revision(
+                                reconcile_result.memory_id,
+                                reconcile_result.revision_id,
+                            )
+                            index_status = "active"
+                            indexed = True
+                    except Exception as sync_err:
+                        logger.warning(f"Synchronous vector indexing fallback to background worker: {sync_err}")
+                elif reconcile_result.status == "unchanged":
+                    index_status = "active"
+                    indexed = True
             else:
                 await ingestion_pipeline.process_file(str(path))
+                index_status = "active"
                 indexed = True
-                warning = None
         except Exception as ingest_error:
+            index_status = "failed"
             indexed = False
             warning = str(ingest_error)
+
         return {
             "status": "success",
             "decision": getattr(write_result, "decision", "ADD"),
             "memory_id": str(getattr(write_result, "memory_id", "")) or None,
             "path": getattr(write_result, "vault_path", str(path)),
-            "index_status": getattr(write_result, "index_status", "pending"),
+            "index_status": index_status,
             "indexed": indexed,
             "warning": warning,
             "message": "Memory written to the vault.",
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 

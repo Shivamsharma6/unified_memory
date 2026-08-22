@@ -284,3 +284,25 @@ Future agents should search for [[{task}]], the listed entities, and the listed 
     async def memory_quality(self, path: str) -> Dict[str, Any]:
         """Score memory quality."""
         return await self._request("POST", "/memory/quality", {"path": path}, use_cache=True)
+
+    async def wait_for_indexing(
+        self,
+        memory_id: str,
+        timeout: float = 5.0,
+        poll_interval: float = 0.1,
+    ) -> bool:
+        """Poll the memory status endpoint until the revision is active or timeout occurs."""
+        import asyncio
+        import time
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                res = await self._request("GET", f"/memory/status/{memory_id}", use_cache=False)
+                if res.get("revision_status") == "active":
+                    return True
+            except Exception:
+                pass
+            await asyncio.sleep(poll_interval)
+        return False
+
