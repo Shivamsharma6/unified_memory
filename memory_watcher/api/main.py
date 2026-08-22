@@ -1,5 +1,9 @@
+import logging
 import os
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
 
 from api.routers.graph import router as graph_router
 from api.routers.identity import router as identity_router
@@ -7,7 +11,7 @@ from api.routers.quality import router as quality_router
 from api.routers.memory_edit import router as memory_edit_router
 from api.routers.profiles import router as profiles_router
 from api.routers.validation import router as validation_router
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from api.models import SearchRequest, SearchResponse, RememberRequest, SummarizeRequest, ContextRequest, ProcedureRequest
 from api.memory_writer import write_memory
@@ -17,6 +21,7 @@ from llm.provider import LLMProvider, LLMConfig, MODEL_ROLES, get_llm_config
 from pipelines.ingestion import IngestionPipeline
 from identity.store import IdentityStore
 from api.readiness import assess_readiness, assess_lightweight_readiness, assess_deep_projection_drift
+from api.security import verify_agent_auth
 
 from models.memory_record import get_vault_root
 
@@ -25,12 +30,13 @@ app = FastAPI(
     description="Advanced Retrieval API for Hermes, OpenClaw, and VoiceAI",
     version="1.1.2"
 )
-app.include_router(graph_router)
-app.include_router(identity_router)
-app.include_router(quality_router)
-app.include_router(memory_edit_router)
-app.include_router(profiles_router)
-app.include_router(validation_router)
+app.include_router(graph_router, dependencies=[Depends(verify_agent_auth)])
+app.include_router(identity_router, dependencies=[Depends(verify_agent_auth)])
+app.include_router(quality_router, dependencies=[Depends(verify_agent_auth)])
+app.include_router(memory_edit_router, dependencies=[Depends(verify_agent_auth)])
+app.include_router(profiles_router, dependencies=[Depends(verify_agent_auth)])
+app.include_router(validation_router, dependencies=[Depends(verify_agent_auth)])
+
 
 pipeline = RetrievalPipeline()
 ingestion_pipeline = IngestionPipeline()
@@ -64,13 +70,15 @@ async def shutdown_event():
         _llm = None
     await pipeline.shutdown()
 
-@app.post("/search", response_model=SearchResponse, tags=["Retrieval"])
+@app.post("/search", response_model=SearchResponse, dependencies=[Depends(verify_agent_auth)], tags=["Retrieval"])
 async def search_memory(request: SearchRequest):
     """Execute the 8-step advanced semantic search pipeline."""
     try:
         return await pipeline.search(request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error executing search_memory: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error executing search")
+
 
 WRITE_DISTILLATION_SCHEMA = {
     "type": "object",
@@ -92,12 +100,13 @@ WRITE_DISTILLATION_SYSTEM = (
 )
 
 
-@app.post("/remember", tags=["Ingestion"])
+@app.post("/remember", dependencies=[Depends(verify_agent_auth)], tags=["Ingestion"])
 async def remember(request: RememberRequest):
     """Directly ingest a memory bypassing the file watcher (for agent direct writes)."""
     try:
         vault_path = get_vault_root()
         final_req = request
+
 
         if request.distill:
             try:
@@ -203,12 +212,13 @@ async def remember(request: RememberRequest):
             "message": "Memory written to the vault.",
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error ingesting memory in remember: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error ingesting memory")
 
 
 
 
-@app.post("/summarize", tags=["Compute"])
+@app.post("/summarize", dependencies=[Depends(verify_agent_auth)], tags=["Compute"])
 async def summarize(request: SummarizeRequest):
     """Generate a semantic summary using LLM-powered distillation."""
     try:
@@ -226,7 +236,9 @@ async def summarize(request: SummarizeRequest):
             return {"topic": request.topic, "summary": summary, "sources": [r.source_file for r in res.results]}
         return {"topic": request.topic, "summary": f"No relevant context found for '{request.topic}'.", "sources": []}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error summarizing topic: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error summarizing topic")
+
 
 @app.post("/entities", tags=["Graph"])
 async def get_entities():
