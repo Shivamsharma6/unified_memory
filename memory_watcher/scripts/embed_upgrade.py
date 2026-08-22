@@ -147,28 +147,21 @@ async def upgrade_embeddings(args: argparse.Namespace) -> dict:
                             },
                         }
                     )
-                # Upsert into specific target collection
+                from qdrant_client.http import models as qdrant_models
                 qdrant_points = [
-                    models.PointStruct(
+                    qdrant_models.PointStruct(
                         id=str(p["chunk_id"]),
                         vector=p["vector"],
                         payload=p["payload"],
                     )
                     for p in points
                 ]
-                from qdrant_client.http import models as qdrant_models
                 await vectors.client.upsert(
                     collection_name=collection_name,
-                    points=[
-                        qdrant_models.PointStruct(
-                            id=str(p["chunk_id"]),
-                            vector=p["vector"],
-                            payload=p["payload"],
-                        )
-                        for p in points
-                    ],
+                    points=qdrant_points,
                     wait=True,
                 )
+
 
             processed += len(batch_rows)
             logger.info("Progress: %d / %d chunks embedded (%.1f%%)", processed, total_chunks, (processed / total_chunks) * 100)
