@@ -228,17 +228,18 @@ class RetrievalPipeline:
             # Temporal boost
             date_str = payload.get("date", "")
             temporal = self._temporal_boost(date_str)
-
-            final_importance = base_importance + graph_boost + identity_boost + temporal
+            raw_importance = float(payload.get("importance") or payload.get("frontmatter", {}).get("importance", 1.0))
+            final_importance = (base_importance + graph_boost + identity_boost + temporal) * (0.8 + 0.2 * min(2.0, max(0.5, raw_importance)))
             
             ranked.append(SearchResult(
                 chunk_id=str(r_id),
                 text=payload.get("text", ""),
                 score=score,
-                importance=final_importance,
+                importance=round(final_importance, 4),
                 source_file=payload.get("source_file", "unknown"),
                 entities=result_entities
             ))
+
 
         # Cross-encoder reranking pass
         if query:

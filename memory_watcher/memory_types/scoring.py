@@ -54,7 +54,14 @@ class ImportanceScorer:
         if weights:
             self.WEIGHTS = weights
 
-    def score(self, content: str, emotional_state: Optional[EmotionalState] = None, metadata: Optional[Dict[str, Any]] = None, category: Optional[MemoryCategory] = None) -> ImportanceScore:
+    def score(
+        self,
+        content: str,
+        emotional_state: Optional[EmotionalState] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        category: Optional[MemoryCategory] = None,
+        corpus_vocabulary: Optional[Any] = None,
+    ) -> ImportanceScore:
         """Calculate importance score for a memory."""
         meta = metadata or {}
         content_lower = content.lower()
@@ -64,7 +71,7 @@ class ImportanceScorer:
         else:
             emotional_weight = self._keyword_emotional_score(content_lower)
 
-        novelty = self._calculate_novelty(content)
+        novelty = self._calculate_novelty(content, corpus_vocabulary=corpus_vocabulary)
         goal_relevance = self._calculate_goal_relevance(content_lower, meta)
         repetition = self._calculate_repetition(meta)
 
@@ -109,13 +116,28 @@ class ImportanceScorer:
         score = sum(words.get(w, 0) for w in words if w in content_lower)
         return min(1.0, score / max(len(words), 1))
 
-    def _calculate_novelty(self, content: str) -> float:
-        common_words = {"the", "a", "an", "is", "are", "was", "were", "it", "this", "that", "to", "of", "and", "in", "for", "on", "with", "at", "by", "from", "as", "be", "has", "had", "have", "not", "but", "or", "can", "will", "just", "so", "up", "out", "if", "about"}
-        words = set(content.lower().split())
+    def _calculate_novelty(self, content: str, corpus_vocabulary: Optional[Any] = None) -> float:
+        import re
+        common_words = {
+            "the", "a", "an", "is", "are", "was", "were", "it", "this", "that",
+            "to", "of", "and", "in", "for", "on", "with", "at", "by", "from",
+            "as", "be", "has", "had", "have", "not", "but", "or", "can", "will",
+            "just", "so", "up", "out", "if", "about",
+        }
+        words = set(re.findall(r"\b[a-zA-Z]{2,}\b", content.lower()))
         if not words:
             return 0.0
-        novel_words = words - common_words
-        return min(1.0, len(novel_words) / max(len(words), 1) * 3)
+        significant_words = words - common_words
+        if not significant_words:
+            return 0.0
+
+        if corpus_vocabulary is not None:
+            corpus_set = {str(w).lower() for w in corpus_vocabulary}
+            novel_words = significant_words - corpus_set
+            return min(1.0, len(novel_words) / max(len(significant_words), 1))
+
+        return min(1.0, len(significant_words) / max(len(words), 1) * 1.5)
+
 
     def _calculate_goal_relevance(self, content_lower: str, meta: Dict[str, Any]) -> float:
         goal_keywords = ["goal", "objective", "target", "milestone", "priority", "critical", "important", "must", "need", "require", "deadline", "project", "deliverable", "specification"]

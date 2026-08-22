@@ -226,8 +226,10 @@ class HybridRetrieval:
                 0.10,
                 float(profile_boosts.get(memory_id, profile_boosts.get(str(memory_id), 0.0))),
             )
+            memory_importance = float(payload.get("importance") or payload.get("frontmatter", {}).get("importance", 1.0))
+            importance_boost = min(0.10, 0.05 * (memory_importance - 1.0)) if memory_importance != 1.0 else 0.0
             temporal_boost = self._temporal_boost(payload)
-            total_boost = graph_boost + profile_boost + temporal_boost
+            total_boost = graph_boost + profile_boost + temporal_boost + importance_boost
             initial_score = min(1.0, base_score + total_boost)
             revision_id = str(payload["revision_id"])
             evidence_id = f"{memory_id}:{revision_id}:{item['chunk_id']}"
@@ -237,7 +239,7 @@ class HybridRetrieval:
                         chunk_id=item["chunk_id"],
                         text=payload.get("text", ""),
                         score=initial_score,
-                        importance=1.0 + total_boost,
+                        importance=round(memory_importance + graph_boost + profile_boost + temporal_boost, 4),
                         source_file=payload.get("source_file", "unknown"),
                         entities=sorted(result_entity_keys),
                         memory_id=str(memory_id),
