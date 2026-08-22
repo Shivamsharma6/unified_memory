@@ -418,3 +418,44 @@ async def prune_maintenance(max_age_days: int = 30, outbox_retention_days: int =
     }
 
 
+@app.post("/admin/repair/orphans", tags=["Maintenance"])
+async def repair_orphans():
+    """Clean orphaned staged revisions and deleted vector points."""
+    results = {}
+    if pipeline.control_store is not None:
+        pruned_revisions = await pipeline.control_store.clean_orphaned_staged_revisions(older_than_seconds=3600)
+        reclaimed_outbox = await pipeline.control_store.auto_reclaim_failed_outbox()
+        results["pruned_orphaned_revisions"] = pruned_revisions
+        results["reclaimed_failed_outbox"] = reclaimed_outbox
+    if pipeline.vector_store is not None:
+        try:
+            cleaned_vectors = await pipeline.vector_store.delete_orphaned_points()
+            results["cleaned_orphaned_vectors"] = cleaned_vectors
+        except Exception as e:
+            results["cleaned_orphaned_vectors_error"] = str(e)
+    return {
+        "status": "success",
+        "repairs": results,
+    }
+
+
+@app.post("/admin/repair/reindex", tags=["Maintenance"])
+async def repair_reindex(force: bool = False):
+    """Trigger complete or forced vault reconciliation scan."""
+    if pipeline.reconciler is None:
+        raise HTTPException(status_code=503, detail="Reconciler is not available")
+    scan_report = await pipeline.reconciler.scan(force=force)
+    return {
+        "status": "success",
+        "report": {
+            "processed": scan_report.processed,
+            "created": scan_report.created,
+            "updated": scan_report.updated,
+            "deleted": scan_report.deleted,
+            "skipped": scan_report.skipped,
+            "errors": scan_report.errors,
+        } if hasattr(scan_report, "processed") else scan_report,
+    }
+
+
+

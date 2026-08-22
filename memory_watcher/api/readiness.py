@@ -83,13 +83,16 @@ async def assess_lightweight_readiness(
     except Exception as error:
         components["qdrant"] = {"status": "unavailable", "detail": str(error)}
 
-    ready = pg_ok and qdrant_ok and jobs.get("failed_outbox", 0) == 0
+    ready = pg_ok and qdrant_ok
+    degraded = bool(jobs.get("failed_outbox", 0) > 0 or jobs.get("failed_jobs", 0) > 0)
     return {
         "ready": ready,
+        "degraded": degraded,
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "components": components,
         "jobs": jobs,
     }
+
 
 
 async def assess_deep_projection_drift(
