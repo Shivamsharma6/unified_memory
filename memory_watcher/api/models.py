@@ -44,6 +44,8 @@ class RememberRequest(BaseModel):
     tags: List[str] = Field(default_factory=list)
     source_agent: Optional[str] = None
     project: Optional[str] = None
+    session_id: Optional[str] = None
+    sync: bool = False
     distill: bool = False
     importance: Optional[float] = None
     entities: List[str] = Field(default_factory=list)
@@ -59,3 +61,45 @@ class ContextRequest(BaseModel):
 
 class ProcedureRequest(BaseModel):
     task: str
+
+
+class SessionBeginRequest(BaseModel):
+    task: str
+    source_agent: str = "unknown"
+    project: Optional[str] = None
+    session_id: Optional[str] = None
+    max_tokens: int = 2000
+
+class SessionBeginResponse(BaseModel):
+    session_id: str
+    task: str
+    source_agent: str
+    project: Optional[str] = None
+    status: str = "ready"
+    procedures: List[str]
+    context: str
+    memory_policy: str
+
+class SessionEndRequest(BaseModel):
+    task: str
+    outcome: str
+    session_id: Optional[str] = None
+    source_agent: str = "unknown"
+    project: Optional[str] = None
+    files: List[str] = Field(default_factory=list)
+    decisions: List[str] = Field(default_factory=list)
+    fixes: List[str] = Field(default_factory=list)
+    entities: List[str] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
+    category: str = "episodic"
+    sync: bool = False
+
+class SessionEndResponse(BaseModel):
+    ok: bool
+    session_id: Optional[str] = None
+    memory_id: Optional[str] = None
+    category: str = "episodic"
+    tags: List[str] = Field(default_factory=list)
+    decision: Optional[str] = None
+    error: Optional[str] = None
+
