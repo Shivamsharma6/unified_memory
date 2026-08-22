@@ -14,7 +14,7 @@ Defines the 7 memory categories that structure all stored experiences:
 import os
 from enum import Enum
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MemoryCategory(str, Enum):
@@ -28,8 +28,45 @@ class MemoryCategory(str, Enum):
     RELATIONSHIP = "relationship"
 
 
+CANONICAL_TYPE_ALIASES: Dict[str, str] = {
+    "concept": MemoryCategory.SEMANTIC.value,
+    "concepts": MemoryCategory.SEMANTIC.value,
+    "semantic": MemoryCategory.SEMANTIC.value,
+    "daily": MemoryCategory.EPISODIC.value,
+    "episodic": MemoryCategory.EPISODIC.value,
+    "task": MemoryCategory.PROCEDURAL.value,
+    "tasks": MemoryCategory.PROCEDURAL.value,
+    "procedure": MemoryCategory.PROCEDURAL.value,
+    "procedures": MemoryCategory.PROCEDURAL.value,
+    "procedural": MemoryCategory.PROCEDURAL.value,
+    "profile": MemoryCategory.IDENTITY.value,
+    "identity": MemoryCategory.IDENTITY.value,
+    "goal": MemoryCategory.GOAL.value,
+    "goals": MemoryCategory.GOAL.value,
+    "objective": MemoryCategory.GOAL.value,
+    "reflection": MemoryCategory.REFLECTION.value,
+    "reflections": MemoryCategory.REFLECTION.value,
+    "review": MemoryCategory.REFLECTION.value,
+    "relationship": MemoryCategory.RELATIONSHIP.value,
+    "relationships": MemoryCategory.RELATIONSHIP.value,
+    "dynamics": MemoryCategory.RELATIONSHIP.value,
+    "summary": MemoryCategory.SEMANTIC.value,
+    "summaries": MemoryCategory.SEMANTIC.value,
+}
+
+
+def normalize_memory_type(val: Any) -> str:
+    """Normalize any type string or alias to a canonical MemoryCategory value."""
+    if not val:
+        return MemoryCategory.SEMANTIC.value
+    cleaned = str(val).strip().lower()
+    return CANONICAL_TYPE_ALIASES.get(cleaned, MemoryCategory.SEMANTIC.value)
+
+
 class MemoryTypeConfig(BaseModel):
     """Configuration for a single memory category."""
+    model_config = ConfigDict(use_enum_values=True)
+
     name: MemoryCategory
     description: str
     collection_name: str
@@ -39,8 +76,6 @@ class MemoryTypeConfig(BaseModel):
     retention_policy: str = "indefinite"  # indefinite, rolling, archival
     min_importance_threshold: float = 0.0  # 0.0–1.0, below this gets pruned
 
-    class Config:
-        use_enum_values = True
 
 
 # Registry of all memory types

@@ -10,11 +10,18 @@ import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 
-from memory_watcher.memory_types.memory_types import MemoryCategory, get_memory_type, get_all_memory_types
-from memory_watcher.memory_types.episodic import EpisodicMemory, EmotionalState, ContextData, OutcomeData
-from memory_watcher.memory_types.other_types import (
-    IdentityMemory, GoalMemory, ReflectionMemory, RelationshipMemory,
-)
+try:
+    from .memory_types import MemoryCategory, get_memory_type, get_all_memory_types
+    from .episodic import EpisodicMemory, EmotionalState, ContextData, OutcomeData
+    from .other_types import (
+        IdentityMemory, GoalMemory, ReflectionMemory, RelationshipMemory,
+    )
+except ImportError:
+    from memory_watcher.memory_types.memory_types import MemoryCategory, get_memory_type, get_all_memory_types
+    from memory_watcher.memory_types.episodic import EpisodicMemory, EmotionalState, ContextData, OutcomeData
+    from memory_watcher.memory_types.other_types import (
+        IdentityMemory, GoalMemory, ReflectionMemory, RelationshipMemory,
+    )
 
 logger = logging.getLogger(__name__)
 

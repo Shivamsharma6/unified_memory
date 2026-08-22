@@ -12,6 +12,14 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+try:
+    from memory_types.memory_types import normalize_memory_type
+except ImportError:
+    try:
+        from memory_types import normalize_memory_type
+    except ImportError:
+        from memory_watcher.memory_types.memory_types import normalize_memory_type
+
 
 MEMORY_ID_NAMESPACE = uuid.UUID("56b81673-c72e-4b52-8178-f78b1eb5107c")
 _FRONTMATTER_RE = re.compile(
@@ -194,7 +202,7 @@ def parse_memory(
         path=Path(path),
         vault_path=normalized_vault_path(path, vault_root),
         title=_title(body, Path(path).stem),
-        type=str(metadata.get("type") or "semantic"),
+        type=normalize_memory_type(metadata.get("type")),
         status=str(metadata.get("status") or "active"),
         aliases=_as_string_list(metadata.get("aliases")),
         tags=_as_string_list(metadata.get("tags")),

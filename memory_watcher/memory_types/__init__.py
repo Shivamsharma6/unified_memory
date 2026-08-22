@@ -14,39 +14,65 @@ Categories:
   relationship  - people-specific dynamics
 """
 
-from memory_watcher.memory_types.memory_types import (
-    MemoryCategory,
-    MemoryTypeConfig,
-    MEMORY_TYPES,
-    get_memory_type,
-    get_all_memory_types,
-    get_enabled_memory_types,
-    get_collection_names,
-)
-
-from memory_watcher.memory_types.episodic import (
-    EpisodicMemory,
-    EmotionalState,
-    ContextData,
-    OutcomeData,
-)
-
-from memory_watcher.memory_types.other_types import (
-    IdentityMemory,
-    GoalMemory,
-    ReflectionMemory,
-    RelationshipMemory,
-)
-
-from memory_watcher.memory_types.pipeline import MemoryIngestionPipeline
-
-from memory_watcher.memory_types.scoring import ImportanceScorer, ImportanceScore
-
-from memory_watcher.memory_types.consolidation import MemoryConsolidator, ConsolidationResult
+try:
+    from .memory_types import (
+        MemoryCategory,
+        MemoryTypeConfig,
+        MEMORY_TYPES,
+        CANONICAL_TYPE_ALIASES,
+        normalize_memory_type,
+        get_memory_type,
+        get_all_memory_types,
+        get_enabled_memory_types,
+        get_collection_names,
+    )
+    from .episodic import (
+        EpisodicMemory,
+        EmotionalState,
+        ContextData,
+        OutcomeData,
+    )
+    from .other_types import (
+        IdentityMemory,
+        GoalMemory,
+        ReflectionMemory,
+        RelationshipMemory,
+    )
+    from .pipeline import MemoryIngestionPipeline
+    from .scoring import ImportanceScorer, ImportanceScore
+    from .consolidation import MemoryConsolidator, ConsolidationResult
+except ImportError:
+    from memory_watcher.memory_types.memory_types import (
+        MemoryCategory,
+        MemoryTypeConfig,
+        MEMORY_TYPES,
+        CANONICAL_TYPE_ALIASES,
+        normalize_memory_type,
+        get_memory_type,
+        get_all_memory_types,
+        get_enabled_memory_types,
+        get_collection_names,
+    )
+    from memory_watcher.memory_types.episodic import (
+        EpisodicMemory,
+        EmotionalState,
+        ContextData,
+        OutcomeData,
+    )
+    from memory_watcher.memory_types.other_types import (
+        IdentityMemory,
+        GoalMemory,
+        ReflectionMemory,
+        RelationshipMemory,
+    )
+    from memory_watcher.memory_types.pipeline import MemoryIngestionPipeline
+    from memory_watcher.memory_types.scoring import ImportanceScorer, ImportanceScore
+    from memory_watcher.memory_types.consolidation import MemoryConsolidator, ConsolidationResult
 
 __all__ = [
     # Memory types
     "MemoryCategory", "MemoryTypeConfig", "MEMORY_TYPES",
+    "CANONICAL_TYPE_ALIASES", "normalize_memory_type",
     "get_memory_type", "get_all_memory_types",
     "get_enabled_memory_types", "get_collection_names",
     # Episodic
@@ -60,3 +86,4 @@ __all__ = [
     # Consolidation
     "MemoryConsolidator", "ConsolidationResult",
 ]
+

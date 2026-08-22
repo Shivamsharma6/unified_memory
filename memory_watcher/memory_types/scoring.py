@@ -9,8 +9,12 @@ import logging
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
 
-from memory_watcher.memory_types.memory_types import MemoryCategory, get_memory_type
-from memory_watcher.memory_types.episodic import EmotionalState
+try:
+    from .memory_types import MemoryCategory, get_memory_type
+    from .episodic import EmotionalState
+except ImportError:
+    from memory_watcher.memory_types.memory_types import MemoryCategory, get_memory_type
+    from memory_watcher.memory_types.episodic import EmotionalState
 
 logger = logging.getLogger(__name__)
 

@@ -24,12 +24,16 @@ from models.memory_record import (
     parse_memory,
     split_frontmatter,
 )
+try:
+    from memory_types.memory_types import MemoryCategory, CANONICAL_TYPE_ALIASES
+except ImportError:
+    from memory_watcher.memory_types.memory_types import MemoryCategory, CANONICAL_TYPE_ALIASES
 from pipelines.reconciliation import Reconciler
 
 router = APIRouter(prefix="/vault", tags=["Validation"])
 
 WIKILINK_RE = re.compile(r"\[\[(.*?)\]\]")
-VALID_MEMORY_TYPES = {"semantic", "episodic", "procedural", "summary", "summaries", "entity", "profile"}
+VALID_MEMORY_TYPES = set(CANONICAL_TYPE_ALIASES.keys()) | {c.value for c in MemoryCategory} | {"entity", "profile"}
 
 
 class ValidateMemoryRequest(BaseModel):
