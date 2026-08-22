@@ -21,9 +21,11 @@ from pydantic import BaseModel, Field
 from models.memory_record import (
     MEMORY_ID_NAMESPACE,
     deterministic_memory_id,
+    get_vault_root,
     parse_memory,
     split_frontmatter,
 )
+
 try:
     from memory_types.memory_types import MemoryCategory, CANONICAL_TYPE_ALIASES
 except ImportError:
@@ -201,15 +203,16 @@ def validate_note_content(
 @router.post("/validate-memory", response_model=ValidateMemoryResponse)
 async def validate_memory_content(request: ValidateMemoryRequest):
     """Validate a single memory Markdown note."""
-    vault_root = Path(os.getenv("UAMS_VAULT_PATH", str(Path(__file__).resolve().parents[3])))
+    vault_root = get_vault_root()
     return validate_note_content(request.content, request.path or "note.md", vault_root=vault_root)
 
 
 @router.get("/validate", response_model=VaultValidationSummary)
 async def validate_entire_vault():
     """Scan and validate all Markdown notes in the vault against conventions."""
-    vault_root = Path(os.getenv("UAMS_VAULT_PATH", str(Path(__file__).resolve().parents[3])))
+    vault_root = get_vault_root()
     reconciler = Reconciler(vault_root, store=None)
+
     paths = reconciler.iter_memory_paths()
 
     # Pre-index all note names, stems, and aliases for link resolution

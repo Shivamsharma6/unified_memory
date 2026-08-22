@@ -18,6 +18,8 @@ from pipelines.ingestion import IngestionPipeline
 from identity.store import IdentityStore
 from api.readiness import assess_readiness, assess_lightweight_readiness, assess_deep_projection_drift
 
+from models.memory_record import get_vault_root
+
 app = FastAPI(
     title="Unified Agent Memory API",
     description="Advanced Retrieval API for Hermes, OpenClaw, and VoiceAI",
@@ -32,7 +34,8 @@ app.include_router(validation_router)
 
 pipeline = RetrievalPipeline()
 ingestion_pipeline = IngestionPipeline()
-identity_store = IdentityStore(os.getenv("UAMS_VAULT_PATH", str(Path(__file__).resolve().parents[2])))
+identity_store = IdentityStore(str(get_vault_root()))
+
 
 # LLM: lazy singleton — created on first call, auto-shuts down after idle
 _llm: LLMProvider | None = None
@@ -93,8 +96,9 @@ WRITE_DISTILLATION_SYSTEM = (
 async def remember(request: RememberRequest):
     """Directly ingest a memory bypassing the file watcher (for agent direct writes)."""
     try:
-        vault_path = Path(os.getenv("UAMS_VAULT_PATH", str(Path(__file__).resolve().parents[2])))
+        vault_path = get_vault_root()
         final_req = request
+
         if request.distill:
             try:
                 llm = _get_llm()
@@ -319,9 +323,7 @@ async def projection_status_check():
             status_code=503,
             content={"ready": False, "detail": "control plane is not initialized"},
         )
-    vault_root = Path(
-        os.getenv("UAMS_VAULT_PATH", str(Path(__file__).resolve().parents[2]))
-    )
+    vault_root = get_vault_root()
     report = await assess_deep_projection_drift(
         vault_root,
         pipeline.control_store,
@@ -356,7 +358,7 @@ async def reflect():
     reflector = MemoryReflector()
     try:
         # Gather recent memories from the vault
-        vault_path = Path(os.getenv("UAMS_VAULT_PATH", str(Path(__file__).resolve().parents[2])))
+        vault_path = get_vault_root()
         daily_dir = vault_path / "Daily"
         memories = []
         if daily_dir.exists():
@@ -383,9 +385,10 @@ async def reflect():
 async def consolidate_memories():
     """Consolidate episodic experiences into abstract concepts and reduce redundancy."""
     from memory_types.consolidation import MemoryConsolidator
-    vault_path = Path(os.getenv("UAMS_VAULT_PATH", str(Path(__file__).resolve().parents[2])))
+    vault_path = get_vault_root()
     consolidator = MemoryConsolidator(vault_path=str(vault_path))
     result = consolidator.consolidate_vault()
+
     if pipeline.reconciler is not None:
         try:
             await pipeline.reconciler.scan()

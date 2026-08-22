@@ -8,10 +8,12 @@ from uuid import UUID, uuid4
 import yaml
 
 from api.models import RememberRequest
-from models.memory_record import atomic_write, split_frontmatter
+from models.memory_record import atomic_write, get_vault_root, split_frontmatter
 
 
-VAULT_ROOT = Path(__file__).resolve().parents[2]
+def _vault_root(root: Optional[Path] = None) -> Path:
+    return get_vault_root(root)
+
 
 CATEGORY_DIRS = {
     "semantic": "Concepts",
@@ -107,7 +109,7 @@ def _build_markdown(request: RememberRequest, memory_id: UUID) -> tuple[str, UUI
 
 
 def _target_directory(category: str, root: Optional[Path] = None) -> Path:
-    base = root or VAULT_ROOT
+    base = get_vault_root(root)
     directory = CATEGORY_DIRS.get(category.lower(), "Daily")
     target = base / directory
     target.mkdir(parents=True, exist_ok=True)
@@ -115,8 +117,9 @@ def _target_directory(category: str, root: Optional[Path] = None) -> Path:
 
 
 def write_memory(request: RememberRequest, vault_root: Optional[Path] = None) -> MemoryWriteResult:
-    base = Path(vault_root) if vault_root else VAULT_ROOT
+    base = get_vault_root(vault_root)
     directory = _target_directory(request.category, root=base)
+
     
     # Parse target incoming content
     incoming_raw_meta, incoming_body = split_frontmatter(request.text)

@@ -1,9 +1,10 @@
-import re
 import asyncio
+import re
 from pathlib import Path
+from typing import Optional
 
+from models.memory_record import get_vault_root
 
-VAULT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _terms(task: str) -> set[str]:
@@ -49,16 +50,17 @@ def _cosine_similarity(a, b):
     return float(dot / max(norm, 1e-8))
 
 
-def get_relevant_procedures(task: str, limit: int = 4) -> list[str]:
+def get_relevant_procedures(task: str, limit: int = 4, vault_root: Optional[Path] = None) -> list[str]:
     procedures = []
+    root = get_vault_root(vault_root)
 
-    agents_file = VAULT_ROOT / "AGENTS.md"
+    agents_file = root / "AGENTS.md"
     if agents_file.exists():
         procedures.append(f"Source: AGENTS.md\n{_excerpt(agents_file, max_chars=3600)}")
 
     task_terms = _terms(task)
     candidates = []
-    tasks_dir = VAULT_ROOT / "Tasks"
+    tasks_dir = root / "Tasks"
     if tasks_dir.exists():
         for path in tasks_dir.glob("*.md"):
             try:
@@ -70,7 +72,8 @@ def get_relevant_procedures(task: str, limit: int = 4) -> list[str]:
     for score, path in sorted(candidates, key=lambda item: item[0], reverse=True):
         if score <= 0 or len(procedures) >= limit:
             break
-        procedures.append(f"Source: {path.relative_to(VAULT_ROOT)}\n{_excerpt(path)}")
+        procedures.append(f"Source: {path.relative_to(root)}\n{_excerpt(path)}")
+
 
     # Try embedding-based reranking if possible
     try:

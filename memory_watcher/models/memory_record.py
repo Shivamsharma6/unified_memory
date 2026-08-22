@@ -86,10 +86,19 @@ def split_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     return metadata, match.group("body").strip()
 
 
-def resolve_vault_path(vault_root: Path, requested_path: str | Path) -> Path:
-    """Resolve a caller-controlled path and guarantee it stays inside the vault."""
+def get_vault_root(explicit_root: Path | str | None = None) -> Path:
+    """Return the authoritative vault root path honoring UAMS_VAULT_PATH."""
+    if explicit_root is not None:
+        return Path(explicit_root).resolve()
+    env_root = os.getenv("UAMS_VAULT_PATH")
+    if env_root:
+        return Path(env_root).resolve()
+    return Path(__file__).resolve().parents[2]
 
-    root = Path(vault_root).resolve()
+
+def resolve_vault_path(vault_root: Path | None = None, requested_path: str | Path = "") -> Path:
+    """Resolve a caller-controlled path and guarantee it stays inside the vault."""
+    root = get_vault_root(vault_root)
     requested = Path(requested_path)
     candidate = requested if requested.is_absolute() else root / requested
     resolved = candidate.resolve(strict=False)
@@ -100,6 +109,7 @@ def resolve_vault_path(vault_root: Path, requested_path: str | Path) -> Path:
     if relative == Path("."):
         raise ValueError("A memory path must name a file inside the vault")
     return resolved
+
 
 
 def normalized_vault_path(path: Path, vault_root: Path | None = None) -> str:

@@ -79,11 +79,14 @@ def score_memory(content: str) -> Dict[str, Any]:
     }
 
 
+from models.memory_record import get_vault_root
+
+
 @router.post("/quality")
 async def memory_quality(request: QualityRequest):
     if request.content:
         return score_memory(request.content)
-    vault_root = Path(__file__).resolve().parents[3]
+    vault_root = get_vault_root()
     file_path = vault_root / request.path
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {request.path}")
@@ -99,8 +102,8 @@ async def memory_quality(request: QualityRequest):
 @router.post("/quality/batch")
 async def batch_quality(paths: list[str]):
     results = []
+    vault_root = get_vault_root()
     for path in paths:
-        vault_root = Path(__file__).resolve().parents[3]
         file_path = vault_root / path
         if file_path.exists():
             try:
@@ -113,3 +116,4 @@ async def batch_quality(paths: list[str]):
         else:
             results.append({"path": path, "score": 0.0, "error": "not_found"})
     return {"results": results}
+

@@ -13,10 +13,11 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from models.memory_record import atomic_write, resolve_vault_path
+from models.memory_record import atomic_write, get_vault_root, resolve_vault_path
 
 router = APIRouter(prefix="/memory", tags=["Memory Edit"])
 _audit_lock = threading.Lock()
+
 
 
 class EditRequest(BaseModel):
@@ -52,7 +53,8 @@ async def memory_status(memory_id: str, request: Request):
 
 
 def _vault_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    return get_vault_root()
+
 
 
 def _audit_log_path() -> Path:
