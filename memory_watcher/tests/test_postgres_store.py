@@ -23,5 +23,7 @@ def test_migrations_are_ordered():
         "003_reconciliation_failure_paths.sql",
         "004_incremental_and_invariants.sql",
         "005_bitemporal_claims.sql",
+        "006_performance_and_storage_indexes.sql",
     ]
+
 
