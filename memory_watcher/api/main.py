@@ -147,6 +147,7 @@ async def remember(request: RememberRequest):
             warning = str(ingest_error)
         return {
             "status": "success",
+            "decision": getattr(write_result, "decision", "ADD"),
             "memory_id": str(getattr(write_result, "memory_id", "")) or None,
             "path": getattr(write_result, "vault_path", str(path)),
             "index_status": getattr(write_result, "index_status", "pending"),
@@ -156,6 +157,7 @@ async def remember(request: RememberRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.post("/summarize", tags=["Compute"])
