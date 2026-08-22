@@ -37,8 +37,9 @@ class MemoryDistiller:
         llm_config: Optional[LLMConfig] = None,
         now: Optional[Callable[[], datetime]] = None,
     ):
-        base = vault_path or os.getenv("UAMS_VAULT_PATH", str(Path(__file__).resolve().parents[2]))
-        self.vault_path = Path(base)
+        from models.memory_record import get_vault_root
+        self.vault_path = get_vault_root(vault_path)
+
         self.daily_dir = self.vault_path / "Daily"
         self.concepts_dir = self.vault_path / "Concepts"
         self.procedures_dir = self.vault_path / "Tasks"

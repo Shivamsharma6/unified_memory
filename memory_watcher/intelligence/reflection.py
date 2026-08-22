@@ -147,7 +147,9 @@ class MemoryReflector:
 
         result = await self.reflect(memories)
         
-        v_root = Path(vault_path) if vault_path else Path(os.getenv("UAMS_VAULT_PATH", str(Path(__file__).resolve().parents[2])))
+        from models.memory_record import get_vault_root
+        v_root = get_vault_root(vault_path)
+
         summaries_dir = v_root / "AI" / "Summaries"
         summaries_dir.mkdir(parents=True, exist_ok=True)
         

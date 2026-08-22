@@ -19,11 +19,15 @@ from identity.injection import IdentityInjector
 logger = logging.getLogger(__name__)
 
 
+from models.memory_record import get_vault_root
+
+
 class IdentityStore:
-    def __init__(self, vault_path: str):
-        self.vault_path = Path(vault_path)
+    def __init__(self, vault_path: Optional[str | Path] = None):
+        self.vault_path = get_vault_root(vault_path)
         self.identity_dir = self.vault_path / "Identity"
         self.identity_dir.mkdir(parents=True, exist_ok=True)
+
 
         self.extraction = IdentityExtractionEngine()
         self.stability = StabilityEngine()

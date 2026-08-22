@@ -57,9 +57,11 @@ class ScanResult:
 class Reconciler:
     """Rebuild derived state from Markdown without trusting watcher delivery."""
 
-    def __init__(self, vault_root: str | Path, store: Any) -> None:
-        self.vault_root = Path(vault_root).resolve()
+    def __init__(self, vault_root: str | Path | None = None, store: Any = None) -> None:
+        from models.memory_record import get_vault_root
+        self.vault_root = get_vault_root(vault_root)
         self.store = store
+
         self.chunker = SemanticChunker()
         self._memory_locks: dict[uuid.UUID, asyncio.Lock] = {}
         self.is_scanning: bool = False

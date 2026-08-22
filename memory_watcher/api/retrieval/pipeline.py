@@ -52,10 +52,8 @@ class RetrievalPipeline:
                 reranker=self.reranker,
                 compressor=self.compressor,
             )
-            vault_root = os.getenv(
-                "UAMS_VAULT_PATH",
-                str(Path(__file__).resolve().parents[3]),
-            )
+            from models.memory_record import get_vault_root
+            vault_root = get_vault_root()
             self.reconciler = Reconciler(vault_root, self.control_store)
         except Exception as error:
             logger.warning("PostgreSQL control plane unavailable; using legacy retrieval: %s", error)
@@ -72,9 +70,11 @@ class RetrievalPipeline:
         
         try:
             from identity.store import IdentityStore
-            self.identity_store = IdentityStore(os.getenv("UAMS_VAULT_PATH", "."))
+            from models.memory_record import get_vault_root
+            self.identity_store = IdentityStore(str(get_vault_root()))
         except Exception:
             logger.warning("Identity store unavailable for retrieval boosts")
+
 
     async def shutdown(self):
         if self._control_open:
