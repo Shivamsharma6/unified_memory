@@ -1,13 +1,16 @@
-"""
-Cross-Encoder Reranker for UAMS retrieval.
-Uses sentence-transformers cross-encoder for accurate reranking.
-Falls back to heuristic scoring if model is unavailable.
-"""
-
+import asyncio
 import logging
+import math
 from typing import List, Any, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _sigmoid(x: float) -> float:
+    try:
+        return 1.0 / (1.0 + math.exp(-float(x)))
+    except OverflowError:
+        return 1.0 if x > 0 else 0.0
 
 
 class CrossEncoderReranker:
@@ -25,7 +28,8 @@ class CrossEncoderReranker:
         self._initialized = True
         try:
             from sentence_transformers import CrossEncoder
-            self._model = CrossEncoder(self.model_name, max_length=512)
+
+            self._model = await asyncio.to_thread(CrossEncoder, self.model_name, max_length=512)
             self._available = True
             logger.info(f"Loaded cross-encoder model: {self.model_name}")
         except ImportError:
@@ -36,19 +40,23 @@ class CrossEncoderReranker:
             self._available = False
 
     async def score(self, pairs: List[tuple[str, str]]) -> List[float]:
+        if not pairs:
+            return []
         await self._ensure_model()
         if self._available and self._model:
-            scores = self._model.predict(pairs)
-            return [float(s) for s in scores]
+            raw_scores = await asyncio.to_thread(self._model.predict, pairs)
+            return [_sigmoid(s) for s in raw_scores]
+
         # Heuristic fallback
         import re as _re
+
         scores = []
         for query, doc in pairs:
-            q_words = set(_re.findall(r'\w+', query.lower()))
-            d_words = set(_re.findall(r'\w+', doc.lower()))
+            q_words = set(_re.findall(r"\w+", query.lower()))
+            d_words = set(_re.findall(r"\w+", doc.lower()))
             overlap = len(q_words & d_words) / max(len(q_words), 1)
             length_penalty = min(1.0, 200 / max(len(doc), 1))
-            scores.append(overlap * 0.7 + length_penalty * 0.3)
+            scores.append(min(1.0, max(0.0, overlap * 0.7 + length_penalty * 0.3)))
         return scores
 
     async def rerank(self, query: str, results: List[Any], top_k: Optional[int] = None) -> List[Any]:
@@ -58,9 +66,9 @@ class CrossEncoderReranker:
         scores = await self.score(pairs)
         for result, ce_score in zip(results, scores):
             original = getattr(result, "score", 0.5)
-            importance = getattr(result, "importance", 1.0)
-            result.score = ce_score * 0.6 + original * 0.2 + (importance - 1.0) * 0.2
+            result.score = min(1.0, max(0.0, ce_score * 0.60 + original * 0.40))
         results.sort(key=lambda r: r.score, reverse=True)
         if top_k:
             results = results[:top_k]
         return results
+
