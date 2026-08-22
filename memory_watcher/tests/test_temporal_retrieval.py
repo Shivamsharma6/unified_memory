@@ -27,4 +27,5 @@ def test_temporal_boost_recent_is_high():
     now = datetime.now()
     yesterday = (now - timedelta(days=1)).isoformat()
     boost = pipeline._temporal_boost(yesterday)
-    assert boost > 0.9  # 1 day ago should be very high
+    assert boost > 0.14  # 1 day ago should be high on calibrated 0.15 scale
+
