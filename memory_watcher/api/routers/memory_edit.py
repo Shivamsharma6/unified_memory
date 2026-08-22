@@ -23,6 +23,8 @@ class EditRequest(BaseModel):
     path: str
     old_text: str
     new_text: str
+    expected_revision_id: Optional[str] = None
+    expected_hash: Optional[str] = None
 
 class DeleteRequest(BaseModel):
     path: str
@@ -114,6 +116,16 @@ async def edit_memory(request: EditRequest):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {request.path}")
     content = file_path.read_text(encoding="utf-8")
+
+    if request.expected_hash:
+        import hashlib
+        current_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        if request.expected_hash != current_hash:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Conflict: content hash mismatch (current: {current_hash[:12]}..., expected: {request.expected_hash[:12]}...)",
+            )
+
     if request.old_text not in content:
         raise HTTPException(status_code=400, detail="old_text not found in file")
     backup_path = _backup(file_path)
@@ -127,6 +139,7 @@ async def edit_memory(request: EditRequest):
         "index_status": "pending",
         "message": "Memory edited.",
     }
+
 
 
 @router.post("/delete")
