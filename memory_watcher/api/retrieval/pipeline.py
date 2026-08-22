@@ -82,7 +82,7 @@ class RetrievalPipeline:
             self._control_open = False
 
     def _temporal_boost(self, date_str: str) -> float:
-        """Calculate recency boost from a date string. Recent = higher boost."""
+        """Calculate recency boost from a date string with bounded dynamic scaling."""
         if not date_str:
             return 0.0
         try:
@@ -93,10 +93,11 @@ class RetrievalPipeline:
                 dt = date_str
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
-            days_ago = (datetime.now(timezone.utc) - dt).days
-            return max(0.0, 2 ** (-days_ago / 30.0))
-        except (ValueError, TypeError):
+            age_days = max(0.0, (datetime.now(timezone.utc) - dt).total_seconds() / 86400)
+            return round(min(0.15, 0.15 * (2.0 ** (-age_days / 14.0))), 4)
+        except (ValueError, TypeError, OverflowError):
             return 0.0
+
 
     async def _step1_understand_query(self, query: str) -> str:
         return query.strip()
