@@ -17,11 +17,11 @@ from dataclasses import dataclass, field
 
 try:
     from .memory_types import MemoryCategory, get_memory_type
-    from .episodic import EpisodicMemory
+    from .episodic import EpisodicMemory, EmotionalState, ContextData, OutcomeData
     from .scoring import ImportanceScorer, ImportanceScore
 except ImportError:
     from memory_watcher.memory_types.memory_types import MemoryCategory, get_memory_type
-    from memory_watcher.memory_types.episodic import EpisodicMemory
+    from memory_watcher.memory_types.episodic import EpisodicMemory, EmotionalState, ContextData, OutcomeData
     from memory_watcher.memory_types.scoring import ImportanceScorer, ImportanceScore
 
 logger = logging.getLogger(__name__)
@@ -50,10 +50,18 @@ class ConsolidationResult:
 class MemoryConsolidator:
     """Periodically consolidates raw memories into stable knowledge."""
 
-    def __init__(self, min_importance_for_retention: float = 0.3, max_cluster_size: int = 10, redundancy_threshold: float = 0.8):
+    def __init__(
+        self,
+        min_importance_for_retention: float = 0.3,
+        max_cluster_size: int = 10,
+        redundancy_threshold: float = 0.8,
+        vault_path: Optional[str] = None,
+    ):
         self.min_importance = min_importance_for_retention
         self.max_cluster_size = max_cluster_size
         self.redundancy_threshold = redundancy_threshold
+        from pathlib import Path
+        self.vault_path = Path(vault_path) if vault_path else None
         self.scorer = ImportanceScorer()
 
     def consolidate(self, memories: List[EpisodicMemory], category: Optional[MemoryCategory] = None) -> ConsolidationResult:
@@ -80,7 +88,7 @@ class MemoryConsolidator:
         pruned, redundancy_count = self._reduce_redundancy(clusters, abstractions)
 
         total = len(memories)
-        pruned_count = sum(len(cluster) - 1 for cluster in pruned)
+        pruned_count = redundancy_count
         retained = total - pruned_count
 
         return ConsolidationResult(
@@ -95,9 +103,12 @@ class MemoryConsolidator:
 
     def _cluster_memories(self, scored: List[Tuple[EpisodicMemory, ImportanceScore]]) -> List[List[Tuple[EpisodicMemory, ImportanceScore]]]:
         """Cluster memories by event_type and key topics."""
+        import re
         clusters: Dict[str, List[Tuple[EpisodicMemory, ImportanceScore]]] = defaultdict(list)
         for mem, score in scored:
-            cluster_key = f"{mem.event_type}:{'|'.join(sorted(mem.participants[:3]))}"
+            entities = re.findall(r'\[\[(.*?)\]\]', f"{mem.summary} {mem.raw_excerpt}")
+            topic = entities[0].lower() if entities else mem.event_type
+            cluster_key = f"{topic}:{'|'.join(sorted(mem.participants[:3]))}" if mem.participants else f"{topic}"
             clusters[cluster_key].append((mem, score))
         result = list(clusters.values())
         result.sort(key=lambda c: len(c), reverse=True)
@@ -197,3 +208,106 @@ class MemoryConsolidator:
             "count": len(episodic_memories),
             "summary": f"Pattern from {len(episodic_memories)} interactions: {', '.join(lessons_list[:3])}" if lessons_list else "No lessons extracted",
         }
+
+    def consolidate_vault(self, vault_path: Optional[str] = None) -> ConsolidationResult:
+        """Scan episodic vault notes, consolidate clusters, write concepts, and archive pruned notes."""
+        import re
+        import yaml
+        from datetime import datetime, timezone
+        from pathlib import Path
+
+        v_root = Path(vault_path) if vault_path else self.vault_path
+        if not v_root:
+            v_root = Path(__file__).resolve().parents[2]
+        daily_dir = v_root / "Daily"
+        concepts_dir = v_root / "Concepts"
+        archive_dir = v_root / "Archive"
+
+        for d in [daily_dir, concepts_dir, archive_dir]:
+            d.mkdir(parents=True, exist_ok=True)
+
+        memories = []
+        file_map = {}
+
+        for file in sorted(daily_dir.glob("*.md")):
+            if file.name == "README.md":
+                continue
+            try:
+                text = file.read_text(encoding="utf-8")
+                fm_match = re.match(r'^---\n(.*?)\n---\n(.*)', text, re.DOTALL)
+                fm = yaml.safe_load(fm_match.group(1)) if fm_match else {}
+                body = fm_match.group(2).strip() if fm_match else text
+
+                entities = re.findall(r'\[\[(.*?)\]\]', text)
+                participants = [e for e in entities if "Shivam" in e or "Hermes" in e or "OpenClaw" in e]
+                lessons = [line.strip("- ").strip() for line in body.splitlines() if line.strip().startswith("- ")]
+
+                mem = EpisodicMemory(
+                    id=str(fm.get("memory_id") or file.stem),
+                    event_type=str(fm.get("event_type", "daily_log")),
+                    summary=body.splitlines()[0] if body else file.stem,
+                    participants=participants or ["agent"],
+                    emotional_state=EmotionalState(),
+                    importance=float(fm.get("importance", 0.5)),
+                    context=ContextData(platform="vault"),
+                    outcome=OutcomeData(lessons_learned=lessons),
+                    tags=fm.get("tags", []),
+                    raw_excerpt=body[:300],
+                )
+                memories.append(mem)
+                file_map[mem.id] = (file, fm, body)
+            except Exception as e:
+                logger.warning(f"Failed to parse {file}: {e}")
+
+        if not memories:
+            return ConsolidationResult(0, 0, 0, 0, 0, 0, "No episodic memories to consolidate.")
+
+        res = self.consolidate(memories, category=MemoryCategory.EPISODIC)
+
+        scored = [(m, self.scorer.score(m.summary)) for m in memories]
+        clusters = self._cluster_memories(scored)
+
+        for cluster in clusters:
+            cluster_mems = [m for m, _ in cluster]
+            concept_data = self.promote_to_concept(cluster_mems)
+            if concept_data:
+                slug = re.sub(r'[^a-zA-Z0-9]+', '_', concept_data.get("summary", "Concept")[:30]).strip('_')
+                concept_file = concepts_dir / f"Concept_{slug}.md"
+
+                lessons_str = "\n".join(f"- {l}" for l in concept_data.get("lessons", []))
+                all_ents = set(concept_data.get("participants", []))
+                for m in cluster_mems:
+                    all_ents.update(re.findall(r'\[\[(.*?)\]\]', f"{m.summary} {m.raw_excerpt}"))
+                entities_str = "\n".join(f"- [[{e}]]" for e in sorted(all_ents) if e and e != "agent")
+
+                concept_content = f"""---
+type: semantic
+aliases: ["{slug}"]
+tags: ["#concept", "#consolidated"]
+source_memories: {concept_data.get("source_memories", [])}
+date: "{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+---
+# {slug.replace('_', ' ')}
+
+## Summary
+{concept_data.get("summary")}
+
+## Key Lessons & Patterns
+{lessons_str if lessons_str else "- No specific lessons recorded."}
+
+## Related Entities
+{entities_str if entities_str else "- None"}
+"""
+                concept_file.write_text(concept_content, encoding="utf-8")
+                res.abstractions_generated += 1
+
+                for mem in cluster_mems:
+                    if mem.id in file_map:
+                        f, fm, b = file_map[mem.id]
+                        fm["distilled_to"] = f"[[{concept_file.stem}]]"
+                        fm["lifecycle"] = "distilled"
+                        fm_str = yaml.dump(fm, sort_keys=False)
+                        f.write_text(f"---\n{fm_str}---\n{b}", encoding="utf-8")
+
+        return res
+

@@ -6,6 +6,7 @@ from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from intelligence.distiller import MemoryDistiller
+from memory_types.consolidation import MemoryConsolidator
 from pipelines.reconciliation import EXCLUDED_DIRECTORIES, Reconciler
 from pipelines.vector_worker import VectorWorker
 from storage.postgres_store import PostgresStore
@@ -73,6 +74,7 @@ class MemoryWatcher:
         self._distill_interval = int(os.getenv("UAMS_DISTILL_INTERVAL", "10"))  # files between distill cycles
         vault_path = str(Path(target_dir))
         self._distiller = MemoryDistiller(vault_path=vault_path)
+        self._consolidator = MemoryConsolidator(vault_path=vault_path)
 
     async def _process_queue(self):
         while True:
@@ -106,14 +108,15 @@ class MemoryWatcher:
                         self.retry_counts.pop(path, None)
                         self._files_since_distill += 1
 
-                # Trigger distillation after N files processed
+                # Trigger distillation and consolidation after N files processed
                 if self._files_since_distill >= self._distill_interval:
                     self._files_since_distill = 0
-                    logger.info(f"Distill cycle triggered after {self._distill_interval} files")
+                    logger.info(f"Distill & consolidation cycle triggered after {self._distill_interval} files")
                     try:
                         await self._distiller.distill_cycle()
+                        self._consolidator.consolidate_vault()
                     except Exception as e:
-                        logger.error(f"Distill cycle failed: {e}")
+                        logger.error(f"Distill/consolidation cycle failed: {e}")
             except asyncio.CancelledError:
                 break
 

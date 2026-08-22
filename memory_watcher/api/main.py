@@ -279,3 +279,28 @@ async def reflect():
         return result
     finally:
         await reflector.shutdown()
+
+
+@app.post("/consolidate", tags=["Intelligence"])
+async def consolidate_memories():
+    """Consolidate episodic experiences into abstract concepts and reduce redundancy."""
+    from memory_types.consolidation import MemoryConsolidator
+    vault_path = Path(os.getenv("UAMS_VAULT_PATH", str(Path(__file__).resolve().parents[2])))
+    consolidator = MemoryConsolidator(vault_path=str(vault_path))
+    result = consolidator.consolidate_vault()
+    if pipeline.reconciler is not None:
+        try:
+            await pipeline.reconciler.scan()
+        except Exception as e:
+            logger.warning(f"Reconciliation after consolidation had warning: {e}")
+    return {
+        "status": "success",
+        "processed": result.memories_processed,
+        "retained": result.memories_retained,
+        "pruned": result.memories_pruned,
+        "clusters": result.clusters_created,
+        "abstractions": result.abstractions_generated,
+        "redundancy_reduced": result.redundancy_reduced,
+        "summary": result.summary,
+    }
+
