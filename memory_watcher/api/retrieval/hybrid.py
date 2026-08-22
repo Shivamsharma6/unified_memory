@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 import re
 import uuid
@@ -14,6 +15,8 @@ from api.retrieval.compressor import ContextCompressor
 from api.retrieval.reranker import CrossEncoderReranker
 from graph.extractor import normalize_entity_key
 from models.document import Chunk, ChunkMetadata, Document
+
+logger = logging.getLogger(__name__)
 
 
 class HybridRetrieval:
@@ -141,8 +144,10 @@ class HybridRetrieval:
                 projects=request.projects,
                 source_agents=request.source_agents,
             )
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Vector search failed: {e}")
             semantic = []
+
         lexical, expansion, profile_boosts = await asyncio.gather(
             lexical_task,
             graph_task,
@@ -204,18 +209,16 @@ class HybridRetrieval:
         scored: list[tuple[SearchResult, float]] = []
         for item in combined.values():
             payload = item["payload"]
-            ranks = item["sources"].values()
-            rank_quality = max((1.0 / rank for rank in ranks), default=0.0)
             semantic_score = max(0.0, min(1.0, item["raw_scores"].get("semantic", 0.0)))
             lexical_score = max(0.0, min(1.0, item["raw_scores"].get("lexical", 0.0)))
             raw_relevance = max(semantic_score, 0.5 if "lexical" in item["sources"] else 0.0, lexical_score)
-            rrf_normalized = item["rrf"] / maximum_rrf
+            rrf_normalized = (item["rrf"] / maximum_rrf) if maximum_rrf > 0 else 0.0
             base_score = (
-                0.55 * rank_quality
-                + 0.20 * raw_relevance
-                + 0.10 * (len(item["sources"]) / 2.0)
-                + 0.15 * rrf_normalized
+                0.40 * rrf_normalized
+                + 0.40 * raw_relevance
+                + 0.20 * (len(item["sources"]) / 2.0)
             )
+
 
             result_entity_keys = set(payload.get("entity_keys") or payload.get("entities") or [])
             graph_boost = min(

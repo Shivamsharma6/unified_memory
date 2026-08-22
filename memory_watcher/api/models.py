@@ -5,14 +5,18 @@ class SearchRequest(BaseModel):
     query: str
     limit: int = 5
     entities: List[str] = Field(default_factory=list)
-    collections: List[str] = Field(default_factory=list)
-    min_score: float = 0.7
+    min_score: float = 0.0
     compress: bool = True
     max_tokens: int = 1500
+    collections: List[str] = Field(default_factory=list)
     memory_types: List[str] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
     projects: List[str] = Field(default_factory=list)
     source_agents: List[str] = Field(default_factory=list)
     include_historical: bool = False
+
+
+
 
 class SearchResult(BaseModel):
     chunk_id: str
