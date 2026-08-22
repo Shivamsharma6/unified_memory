@@ -107,9 +107,10 @@ class HybridRetrieval:
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=timezone.utc)
             age_days = max(0.0, (datetime.now(timezone.utc) - parsed).total_seconds() / 86400)
-            return min(0.05, 0.05 * math.pow(2.0, -age_days / 30.0))
+            return round(min(0.15, 0.15 * math.pow(2.0, -age_days / 14.0)), 4)
         except (TypeError, ValueError, OverflowError):
             return 0.0
+
 
     async def search(self, request: SearchRequest) -> SearchResponse:
         candidate_limit = max(request.limit * 4, 20)
