@@ -32,7 +32,10 @@ class TestMCPAdapter(unittest.IsolatedAsyncioTestCase):
         with patch("uams_sdk.mcp_server._client", return_value=fake_client):
             result = await mcp.call_tool("begin_task", {"task": "Fix login timeout", "max_tokens": 500})
 
-        fake_client.begin_task.assert_awaited_once_with(task="Fix login timeout", max_tokens=500)
+        fake_client.begin_task.assert_awaited_once_with(
+            task="Fix login timeout", max_tokens=500, source_agent=None, project=None, session_id=None
+        )
+
         self.assertEqual(result[1]["status"], "ready")
         self.assertIn("Prior memory", result[1]["context"])
 
