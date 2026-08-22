@@ -275,10 +275,16 @@ async def reflect():
                 except Exception:
                     pass
 
-        result = await reflector.reflect(memories)
+        result = await reflector.reflect_and_persist(memories, vault_path=str(vault_path))
+        if pipeline.reconciler is not None:
+            try:
+                await pipeline.reconciler.scan()
+            except Exception as e:
+                logger.warning(f"Reconciliation after reflection had warning: {e}")
         return result
     finally:
         await reflector.shutdown()
+
 
 
 @app.post("/consolidate", tags=["Intelligence"])
