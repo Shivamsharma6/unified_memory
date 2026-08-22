@@ -167,17 +167,30 @@ async def remember(request: RememberRequest):
                             indexed = True
                     except Exception as sync_err:
                         logger.warning(f"Synchronous vector indexing fallback to background worker: {sync_err}")
-                elif reconcile_result.status == "unchanged":
-                    index_status = "active"
-                    indexed = True
             else:
-                await ingestion_pipeline.process_file(str(path))
-                index_status = "active"
-                indexed = True
+                try:
+                    reconciler = Reconciler(get_vault_root(), store=pipeline.control_store)
+                    if pipeline.control_store is not None:
+                        reconcile_result = await reconciler.reconcile_path(path)
+                        index_status = reconcile_result.status
+                        indexed = (index_status == "active")
+                    else:
+                        doc = parse_memory(path)
+                        if pipeline.embedder is not None and pipeline.vector_store is not None:
+                            chunks = reconciler.chunker.chunk_document(doc)
+                            doc.chunks = chunks
+                            embedded_doc = await pipeline.embedder.embed(doc)
+                            await pipeline.vector_store.upsert_v2(embedded_doc.chunks)
+                            index_status = "active"
+                            indexed = True
+                except Exception as e:
+                    index_status = "pending"
+                    warning = str(e)
         except Exception as ingest_error:
             index_status = "failed"
             indexed = False
             warning = str(ingest_error)
+
 
         return {
             "status": "success",
