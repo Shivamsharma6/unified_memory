@@ -43,13 +43,12 @@ After each task:
 
 
 @mcp.prompt(title="Use UAMS Memory")
-def use_uams_memory(task: str) -> str:
+def use_uams_memory(task: str = "") -> str:
     """Prompt template that makes an agent default to UAMS for a task."""
+    task_line = f"Task: {task}\n\n" if task else ""
     return f"""You have access to Unified Agent Memory System tools.
 
-Task: {task}
-
-Protocol:
+{task_line}Protocol:
 1. Call `begin_task` with the task.
 2. Use the returned procedures and context as grounding before acting.
 3. Use `search_memory` during work when additional recall is needed.

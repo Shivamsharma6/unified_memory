@@ -60,6 +60,14 @@ class TestMCPAdapter(unittest.IsolatedAsyncioTestCase):
         fake_client.end_task.assert_awaited_once()
         self.assertTrue(result[1]["ok"])
 
+    async def test_prompt_use_uams_memory_without_and_with_args(self):
+        prompt_no_args = await mcp.get_prompt("use_uams_memory")
+        self.assertIn("You have access to Unified Agent Memory System tools", prompt_no_args.messages[0].content.text)
+
+        prompt_with_args = await mcp.get_prompt("use_uams_memory", {"task": "Refactor auth"})
+        self.assertIn("Task: Refactor auth", prompt_with_args.messages[0].content.text)
+
 
 if __name__ == "__main__":
     unittest.main()
+
