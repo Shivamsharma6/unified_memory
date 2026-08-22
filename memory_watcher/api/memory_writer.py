@@ -2,7 +2,7 @@ import re
 from datetime import date, datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 from uuid import UUID, uuid4
 
 import yaml
@@ -105,19 +105,21 @@ def _build_markdown(request: RememberRequest, memory_id: UUID) -> tuple[str, UUI
     return f"---\n{frontmatter}\n---\n{body}\n", managed_id
 
 
-def _target_directory(category: str) -> Path:
+def _target_directory(category: str, root: Optional[Path] = None) -> Path:
+    base = root or VAULT_ROOT
     directory = CATEGORY_DIRS.get(category.lower(), "Daily")
-    target = VAULT_ROOT / directory
+    target = base / directory
     target.mkdir(parents=True, exist_ok=True)
     return target
 
 
-def write_memory(request: RememberRequest) -> MemoryWriteResult:
+def write_memory(request: RememberRequest, vault_root: Optional[Path] = None) -> MemoryWriteResult:
+    base = Path(vault_root) if vault_root else VAULT_ROOT
     generated_id = uuid4()
     content, memory_id = _build_markdown(request, generated_id)
     _, body = split_frontmatter(content)
     title = _extract_title(body)
-    directory = _target_directory(request.category)
+    directory = _target_directory(request.category, root=base)
     prefix = date.today().isoformat() if directory.name == "Daily" else ""
     stem = "-".join(part for part in [prefix, _slugify(title), memory_id.hex[:12]] if part)
     path = directory / f"{stem}.md"
@@ -126,5 +128,6 @@ def write_memory(request: RememberRequest) -> MemoryWriteResult:
     return MemoryWriteResult(
         memory_id=memory_id,
         path=path,
-        vault_path=path.relative_to(VAULT_ROOT).as_posix(),
+        vault_path=path.relative_to(base).as_posix(),
     )
+

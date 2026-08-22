@@ -40,6 +40,10 @@ class RememberRequest(BaseModel):
     tags: List[str] = Field(default_factory=list)
     source_agent: Optional[str] = None
     project: Optional[str] = None
+    distill: bool = False
+    importance: Optional[float] = None
+    entities: List[str] = Field(default_factory=list)
+
 
 class SummarizeRequest(BaseModel):
     topic: str

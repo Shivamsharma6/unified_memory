@@ -69,11 +69,69 @@ async def search_memory(request: SearchRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+WRITE_DISTILLATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string", "description": "Concise, descriptive title"},
+        "summary": {"type": "string", "description": "Distilled atomic summary"},
+        "category": {"type": "string", "enum": ["semantic", "episodic", "procedural", "identity", "goal", "reflection", "relationship"]},
+        "entities": {"type": "array", "items": {"type": "string"}, "description": "Key entities extracted"},
+        "tags": {"type": "array", "items": {"type": "string"}, "description": "Key tags"},
+        "facts": {"type": "array", "items": {"type": "string"}, "description": "Atomic facts or lessons"},
+        "action": {"type": "string", "enum": ["ADD", "UPDATE", "NOOP"]},
+    },
+    "required": ["title", "summary", "category", "entities", "tags"],
+}
+
+WRITE_DISTILLATION_SYSTEM = (
+    "You are the UAMS Write-Path Memory Distiller. Distill raw user/agent interactions into structured, atomic knowledge "
+    "following AGENTS.md conventions. Extract key entities, assign the canonical memory category, format facts, and decide action."
+)
+
+
 @app.post("/remember", tags=["Ingestion"])
 async def remember(request: RememberRequest):
     """Directly ingest a memory bypassing the file watcher (for agent direct writes)."""
     try:
-        write_result = write_memory(request)
+        vault_path = Path(os.getenv("UAMS_VAULT_PATH", str(Path(__file__).resolve().parents[2])))
+        final_req = request
+        if request.distill:
+            try:
+                llm = _get_llm()
+                prompt = f"Distill this memory into structured knowledge:\n\n{request.text}"
+                distilled = await llm.generate_structured(
+                    prompt, schema=WRITE_DISTILLATION_SCHEMA, system=WRITE_DISTILLATION_SYSTEM
+                )
+                if isinstance(distilled, dict) and distilled.get("summary"):
+                    title = distilled.get("title") or "Memory"
+                    summary = distilled.get("summary")
+                    cat = distilled.get("category") or request.category
+                    entities = distilled.get("entities", [])
+                    tags = distilled.get("tags", [])
+                    facts = distilled.get("facts", [])
+
+                    entities_wikilinks = [f"[[{e.strip('[]')}]]" for e in entities if e]
+                    tags_formatted = [f"#{t.lstrip('#')}" for t in tags if t]
+                    facts_lines = "\n".join(f"- {f}" for f in facts) if facts else ""
+
+                    structured_body = f"# {title}\n\n## Summary\n{summary}\n"
+                    if facts_lines:
+                        structured_body += f"\n## Key Facts & Lessons\n{facts_lines}\n"
+                    if entities_wikilinks:
+                        structured_body += f"\n## Related Entities\n" + "\n".join(f"- {e}" for e in entities_wikilinks) + "\n"
+
+                    final_req = RememberRequest(
+                        text=structured_body,
+                        category=cat,
+                        tags=list(set(request.tags + tags_formatted)),
+                        source_agent=request.source_agent,
+                        project=request.project,
+                        entities=entities,
+                    )
+            except Exception as e:
+                logger.warning(f"Write-path distillation fallback to raw text: {e}")
+
+        write_result = write_memory(final_req, vault_root=vault_path)
         path = getattr(write_result, "path", write_result)
         try:
             if pipeline.reconciler is not None:
@@ -98,6 +156,7 @@ async def remember(request: RememberRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/summarize", tags=["Compute"])
 async def summarize(request: SummarizeRequest):
