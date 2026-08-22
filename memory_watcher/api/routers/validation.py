@@ -207,17 +207,17 @@ async def validate_memory_content(request: ValidateMemoryRequest):
     return validate_note_content(request.content, request.path or "note.md", vault_root=vault_root)
 
 
-@router.get("/validate", response_model=VaultValidationSummary)
-async def validate_entire_vault():
-    """Scan and validate all Markdown notes in the vault against conventions."""
-    vault_root = get_vault_root()
-    reconciler = Reconciler(vault_root, store=None)
+import asyncio
 
-    paths = reconciler.iter_memory_paths()
+
+def _sync_validate_vault(vault_root: Path, limit: int = 500) -> VaultValidationSummary:
+    reconciler = Reconciler(vault_root, store=None)
+    all_paths = reconciler.iter_memory_paths()
+    paths = all_paths[:limit]
 
     # Pre-index all note names, stems, and aliases for link resolution
     known_targets = set()
-    for p in paths:
+    for p in all_paths:
         known_targets.add(p.stem)
         known_targets.add(p.name)
         try:
@@ -281,3 +281,11 @@ async def validate_entire_vault():
         notes_missing_explicit_id=missing_explicit_id,
         issues=all_issues,
     )
+
+
+@router.get("/validate", response_model=VaultValidationSummary)
+async def validate_entire_vault(limit: int = 500):
+    """Scan and validate Markdown notes in the vault against conventions in a non-blocking thread."""
+    vault_root = get_vault_root()
+    return await asyncio.to_thread(_sync_validate_vault, vault_root, limit)
+
