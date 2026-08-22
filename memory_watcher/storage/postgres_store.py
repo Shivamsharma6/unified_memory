@@ -358,18 +358,10 @@ class PostgresStore:
                     ),
                 )
 
-                for ordinal, chunk in enumerate(chunks):
-                    chunk_id = uuid.uuid5(record.memory_id, f"{content_hash}:{ordinal}")
-                    await connection.execute(
-                        """
-                        INSERT INTO chunks (
-                            chunk_id, revision_id, memory_id, ordinal, heading_path,
-                            content, embedding_text, metadata
-                        )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                        """,
+                if chunks:
+                    chunk_records = [
                         (
-                            chunk_id,
+                            uuid.uuid5(record.memory_id, f"{content_hash}:{ordinal}"),
                             revision_id,
                             record.memory_id,
                             ordinal,
@@ -377,8 +369,20 @@ class PostgresStore:
                             chunk.content,
                             chunk.content,
                             Jsonb(self._jsonable(chunk.metadata.model_dump(mode="json"))),
-                        ),
-                    )
+                        )
+                        for ordinal, chunk in enumerate(chunks)
+                    ]
+                    async with connection.cursor() as cursor:
+                        await cursor.executemany(
+                            """
+                            INSERT INTO chunks (
+                                chunk_id, revision_id, memory_id, ordinal, heading_path,
+                                content, embedding_text, metadata
+                            )
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            """,
+                            chunk_records,
+                        )
 
                 entity_ids: dict[str, uuid.UUID] = {}
                 for entity in projection.entities:
@@ -409,53 +413,67 @@ class PostgresStore:
                             (entity_row["entity_id"], alias, alias_key),
                         )
 
+                mention_records = []
                 for mention in projection.mentions:
                     entity_id = entity_ids.get(mention.normalized_key)
-                    if entity_id is None:
-                        continue
-                    await connection.execute(
-                        """
-                        INSERT INTO mentions (
-                            revision_id, memory_id, entity_id, surface_text, context
+                    if entity_id is not None:
+                        mention_records.append(
+                            (
+                                revision_id,
+                                record.memory_id,
+                                entity_id,
+                                mention.surface_text,
+                                mention.context,
+                            )
                         )
-                        VALUES (%s, %s, %s, %s, %s)
-                        """,
-                        (
-                            revision_id,
-                            record.memory_id,
-                            entity_id,
-                            mention.surface_text,
-                            mention.context,
-                        ),
-                    )
+                if mention_records:
+                    async with connection.cursor() as cursor:
+                        await cursor.executemany(
+                            """
+                            INSERT INTO mentions (
+                                revision_id, memory_id, entity_id, surface_text, context
+                            )
+                            VALUES (%s, %s, %s, %s, %s)
+                            """,
+                            mention_records,
+                        )
 
                 subject_id = entity_ids.get(normalize_entity_key(record.title))
+                claim_records = []
                 for claim in projection.claims:
                     object_id = entity_ids.get(normalize_entity_key(claim.object))
-                    if subject_id is None or object_id is None:
-                        continue
-                    await connection.execute(
-                        """
-                        INSERT INTO claims (
-                            subject_entity_id, predicate, object_entity_id,
-                            evidence_memory_id, evidence_revision_id, status,
-                            confidence, provenance
+                    if subject_id is not None and object_id is not None:
+                        claim_records.append(
+                            (
+                                subject_id,
+                                claim.predicate,
+                                object_id,
+                                record.memory_id,
+                                revision_id,
+                                claim.status,
+                                claim.confidence,
+                                Jsonb({"path": claim.evidence_path}),
+                                getattr(claim, "valid_from", None),
+                                getattr(claim, "valid_to", None),
+                                getattr(claim, "invalidated_by_claim_id", None),
+                            )
                         )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                        """,
-                        (
-                            subject_id,
-                            claim.predicate,
-                            object_id,
-                            record.memory_id,
-                            revision_id,
-                            claim.status,
-                            claim.confidence,
-                            Jsonb({"path": claim.evidence_path}),
-                        ),
-                    )
+                if claim_records:
+                    async with connection.cursor() as cursor:
+                        await cursor.executemany(
+                            """
+                            INSERT INTO claims (
+                                subject_entity_id, predicate, object_entity_id,
+                                evidence_memory_id, evidence_revision_id, status,
+                                confidence, provenance, valid_from, valid_to, invalidated_by_claim_id
+                            )
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """,
+                            claim_records,
+                        )
 
                 await self._stage_profile_facts(connection, record, revision_id)
+
                 await connection.execute(
                     """
                     INSERT INTO ingestion_jobs (
