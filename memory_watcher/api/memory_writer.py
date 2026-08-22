@@ -11,11 +11,16 @@ from api.models import RememberRequest
 from models.memory_record import atomic_write, get_vault_root, split_frontmatter
 
 
-VAULT_ROOT = get_vault_root()
+VAULT_ROOT: Optional[Path] = None
 
 
 def _vault_root(root: Optional[Path] = None) -> Path:
-    return get_vault_root(root or VAULT_ROOT)
+    if root is not None:
+        return get_vault_root(root)
+    if VAULT_ROOT is not None:
+        return get_vault_root(VAULT_ROOT)
+    return get_vault_root()
+
 
 
 
@@ -113,7 +118,7 @@ def _build_markdown(request: RememberRequest, memory_id: UUID) -> tuple[str, UUI
 
 
 def _target_directory(category: str, root: Optional[Path] = None) -> Path:
-    base = get_vault_root(root or VAULT_ROOT)
+    base = _vault_root(root)
     directory = CATEGORY_DIRS.get(category.lower(), "Daily")
     target = base / directory
     target.mkdir(parents=True, exist_ok=True)
@@ -121,8 +126,9 @@ def _target_directory(category: str, root: Optional[Path] = None) -> Path:
 
 
 def write_memory(request: RememberRequest, vault_root: Optional[Path] = None) -> MemoryWriteResult:
-    base = get_vault_root(vault_root or VAULT_ROOT)
+    base = _vault_root(vault_root)
     directory = _target_directory(request.category, root=base)
+
 
 
     
