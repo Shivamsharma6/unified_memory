@@ -1,12 +1,22 @@
-## Summary
+## Summary of Changes
 
-## Testing
+A concise description of the problem solved, architectural motivation, and key changes made.
 
-- [ ] `python -m pytest memory_watcher/tests memory_watcher/api/tests -q`
-- [ ] `python -m pip check`
+## Type of Change
+- [ ] 🐛 Bug fix (non-breaking change fixing an issue)
+- [ ] ✨ New feature or connector (e.g. LangChain, CrewAI, AutoGen, LlamaIndex)
+- [ ] 🔒 Security fix or trust boundary hardening
+- [ ] ⚡ Performance optimization or index enhancement
+- [ ] 📚 Documentation update or examples
+- [ ] 🧪 Test suite addition
 
-## Checklist
+## Testing & Verification
+- [ ] Ran full test suite: `python -m pytest memory_watcher/tests memory_watcher/api/tests -q`
+- [ ] Python bytecode compilation clean: `python -m compileall memory_watcher uams_sdk -q`
+- [ ] Dependency check clean: `python -m pip check`
+- [ ] Added automated test cases under `memory_watcher/tests/`
 
-- [ ] No private vault notes, logs, caches, or generated artifacts are included.
-- [ ] Documentation is updated if behavior changed.
-- [ ] Defaults remain local-first.
+## AGENTS.md & Vault Checklist
+- [ ] No private notes, personal secrets, or local `.env` keys included.
+- [ ] Vault modifications strictly adhere to [AGENTS.md](AGENTS.md) conventions.
+- [ ] Changes maintain local-first, privacy-respecting defaults.
