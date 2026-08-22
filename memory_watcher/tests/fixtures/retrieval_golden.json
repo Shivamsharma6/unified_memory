@@ -1,112 +1,122 @@
 {
-  "version": 1,
-  "description": "Repository-grounded release gate for current UAMS architecture and operating rules.",
+  "version": 2,
+  "description": "Comprehensive multi-domain retrieval benchmark across architectural specs, operating rules, and procedures.",
   "queries": [
     {
       "id": "markdown-authority",
-      "query": "What remains the authoritative shared memory record?",
+      "query": "What remains the authoritative shared memory record in the architecture?",
+      "expected_sources": [
+        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md",
+        "AGENTS.md"
+      ]
+    },
+    {
+      "id": "qdrant-vector-role",
+      "query": "Which engine is responsible for dense semantic vector search?",
       "expected_sources": [
         "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
       ]
     },
     {
-      "id": "qdrant-role",
-      "query": "Which engine remains responsible for semantic vector search?",
-      "expected_sources": [
-        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
-      ]
-    },
-    {
-      "id": "postgres-role",
+      "id": "postgres-control-role",
       "query": "Which system stores exact profiles, revisions, provenance, graph claims, and durable ingestion coordination?",
       "expected_sources": [
         "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
       ]
     },
     {
-      "id": "redis-decision",
-      "query": "Why is Redis unnecessary for the one-machine deployment?",
+      "id": "redis-elimination-rationale",
+      "query": "Why is Redis unnecessary for the single-machine deployment?",
       "expected_sources": [
         "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
       ]
     },
     {
-      "id": "historical-default",
-      "query": "How does normal retrieval treat archived and superseded memories?",
+      "id": "distillation-directive",
+      "query": "What is the core directive regarding raw conversations versus atomic distillation?",
       "expected_sources": [
-        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
+        "AGENTS.md"
       ]
     },
     {
-      "id": "distillation-rule",
-      "query": "Should agents save raw conversations or distill reusable atomic knowledge?",
-      "expected_sources": ["AGENTS.md"]
-    },
-    {
-      "id": "chunking-rule",
-      "query": "How long may a Markdown wall of text be before a structural break is required?",
-      "expected_sources": ["AGENTS.md"]
-    },
-    {
-      "id": "startup-lifecycle",
-      "query": "Which command starts both databases, migrates the schema, starts host services, and waits for readiness?",
+      "id": "chunking-length-rule",
+      "query": "What is the maximum wall of text allowed without a structural break header?",
       "expected_sources": [
-        "docs/superpowers/plans/2026-08-11-unified-memory-reliability.md"
+        "AGENTS.md"
       ]
     },
     {
-      "id": "mcp-lifecycle",
-      "query": "What are the required begin and end calls in the MCP task lifecycle?",
-      "expected_sources": ["README.md"]
+      "id": "naming-conventions-daily",
+      "query": "What is the required naming convention and ISO 8601 prefix for daily episodic logs?",
+      "expected_sources": [
+        "AGENTS.md"
+      ]
     },
     {
-      "id": "localhost-infrastructure",
-      "query": "Which infrastructure services run locally in Docker on the first deployment?",
+      "id": "entity-wikilink-rules",
+      "query": "How should entities, projects, and concepts be wrapped in Markdown text?",
       "expected_sources": [
-        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md",
+        "AGENTS.md"
+      ]
+    },
+    {
+      "id": "two-reference-promotion-rule",
+      "query": "When should an entity or concept referenced in daily notes be promoted to Concepts?",
+      "expected_sources": [
+        "AGENTS.md",
+        "docs/superpowers/specs/2026-08-22-memory-evolution-lifecycle-design.md"
+      ]
+    },
+    {
+      "id": "startup-lifecycle-command",
+      "query": "Which script or command starts database containers, runs migrations, and launches host services?",
+      "expected_sources": [
+        "docs/superpowers/plans/2026-08-11-unified-memory-reliability.md",
         "README.md"
       ]
     },
     {
-      "id": "profile-authority",
-      "query": "Where do canonical user and agent profiles live, and which database materializes their current facts?",
+      "id": "mcp-task-protocol",
+      "query": "What are the required begin_task and end_task calls in the agent MCP protocol?",
       "expected_sources": [
+        "README.md",
+        "AGENTS.md"
+      ]
+    },
+    {
+      "id": "bitemporal-claims-validity",
+      "query": "Which columns track bitemporal validity intervals and invalidation on knowledge graph claims?",
+      "expected_sources": [
+        "docs/superpowers/specs/2026-08-22-memory-evolution-lifecycle-design.md"
+      ]
+    },
+    {
+      "id": "write-path-deduplication",
+      "query": "How does write_memory handle exact duplicates and novel updates to existing concept notes?",
+      "expected_sources": [
+        "docs/superpowers/specs/2026-08-22-memory-evolution-lifecycle-design.md"
+      ]
+    },
+    {
+      "id": "retention-policy-and-archive-filtering",
+      "query": "How does hybrid search treat archived documents when include_historical is false?",
+      "expected_sources": [
+        "docs/superpowers/specs/2026-08-22-memory-evolution-lifecycle-design.md",
         "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
       ]
     },
     {
-      "id": "entity-alias-resolution",
-      "query": "How does entity resolution normalize aliases while preserving display names?",
+      "id": "cross-encoder-sigmoid-scoring",
+      "query": "How are cross-encoder logits calibrated using logistic sigmoid to prevent score collapse?",
       "expected_sources": [
-        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
+        "docs/superpowers/specs/2026-08-22-retrieval-scoring-and-benchmark-design.md"
       ]
     },
     {
-      "id": "graph-evidence-gate",
-      "query": "Which graph claim statuses may influence normal retrieval ranking, and why can candidate claims not boost results?",
+      "id": "asymmetric-query-prefix",
+      "query": "What task prefix is prepended to query text for asymmetric embedding models like mxbai-embed-large?",
       "expected_sources": [
-        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
-      ]
-    },
-    {
-      "id": "historical-opt-in",
-      "query": "Can a historical search include archived or superseded revisions?",
-      "expected_sources": [
-        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
-      ]
-    },
-    {
-      "id": "profile-conflict-resolution",
-      "query": "Which durable store selects the current supported profile fact and handles conflict resolution?",
-      "expected_sources": [
-        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
-      ]
-    },
-    {
-      "id": "exact-collection-name",
-      "query": "What is the exact name of the Qdrant collection that stores the new chunk vectors?",
-      "expected_sources": [
-        "docs/superpowers/specs/2026-08-11-unified-memory-reliability-design.md"
+        "docs/superpowers/specs/2026-08-22-retrieval-scoring-and-benchmark-design.md"
       ]
     }
   ]

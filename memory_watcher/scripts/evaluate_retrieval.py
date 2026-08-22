@@ -51,6 +51,13 @@ def score_case_results(
         pair = (str(memory_id), str(revision_id))
         if pair not in valid_pairs:
             leaks.append(f"{pair[0]}:{pair[1]}")
+
+    reciprocal_rank = 0.0
+    for idx, source in enumerate(sources, start=1):
+        if source in expected:
+            reciprocal_rank = 1.0 / idx
+            break
+
     return {
         "id": case["id"],
         "query": case.get("query", ""),
@@ -58,8 +65,10 @@ def score_case_results(
         "sources": sources,
         "hit1": bool(sources and sources[0] in expected),
         "hit5": any(source in expected for source in sources[:5]),
+        "reciprocal_rank": reciprocal_rank,
         "historical_leaks": leaks,
     }
+
 
 
 async def _valid_pairs(store: PostgresStore, results: list[Any]) -> set[tuple[str, str]]:

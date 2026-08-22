@@ -33,7 +33,9 @@ def test_golden_scoring_accepts_any_audited_source_and_flags_lifecycle_leaks():
 
     assert scored["hit1"] is True
     assert scored["hit5"] is True
+    assert scored["reciprocal_rank"] == 1.0
     assert scored["historical_leaks"] == ["memory-2:revision-2"]
+
 
 
 def test_golden_scoring_treats_missing_revision_evidence_as_a_leak():
