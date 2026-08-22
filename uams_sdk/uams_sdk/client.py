@@ -288,9 +288,14 @@ Future agents should search for [[{task}]], the listed entities, and the listed 
         }, use_cache=False)
 
 
+    async def health(self) -> Dict[str, Any]:
+        """Check server readiness and subsystem statuses."""
+        return await self._request("GET", "/ready", use_cache=False)
+
     async def memory_quality(self, path: str) -> Dict[str, Any]:
         """Score memory quality."""
         return await self._request("POST", "/memory/quality", {"path": path}, use_cache=True)
+
 
     async def wait_for_indexing(
         self,

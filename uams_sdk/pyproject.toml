@@ -34,6 +34,8 @@ Issues = "https://github.com/Shivamsharma6/unified_memory/issues"
 
 [project.scripts]
 uams-mcp = "uams_sdk.mcp_server:main"
+uams-demo = "uams_sdk.demo:main"
+
 
 [project.optional-dependencies]
 dev = [
