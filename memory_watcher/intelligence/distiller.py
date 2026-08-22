@@ -33,11 +33,12 @@ class MemoryDistiller:
 
     def __init__(
         self,
-        vault_path: str,
+        vault_path: Optional[str | Path] = None,
         llm_config: Optional[LLMConfig] = None,
         now: Optional[Callable[[], datetime]] = None,
     ):
-        self.vault_path = Path(vault_path)
+        base = vault_path or os.getenv("UAMS_VAULT_PATH", str(Path(__file__).resolve().parents[2]))
+        self.vault_path = Path(base)
         self.daily_dir = self.vault_path / "Daily"
         self.concepts_dir = self.vault_path / "Concepts"
         self.procedures_dir = self.vault_path / "Tasks"
@@ -49,6 +50,7 @@ class MemoryDistiller:
         # Ensure dirs exist
         for d in [self.daily_dir, self.concepts_dir, self.procedures_dir, self.archive_dir]:
             d.mkdir(parents=True, exist_ok=True)
+
 
     @property
     def llm(self) -> LLMProvider:
@@ -207,8 +209,79 @@ class MemoryDistiller:
                 fm["distilled_to"] = f"[[{proc_path.stem}]]"
                 self._write_file(file, fm, content)
 
+        # D. Enforce AGENTS.md rule: promote entities referenced >= 2 times
+        self.promote_referenced_entities(self.vault_path)
+
+    def promote_referenced_entities(self, vault_path: Optional[Path] = None) -> list[str]:
+        """
+        Enforce AGENTS.md rule: Once a concept or entity is referenced >= 2 times
+        across Daily notes, extract and promote to Concepts/ if not already present.
+        """
+        target_root = Path(vault_path) if vault_path else self.vault_path
+        daily_path = target_root / "Daily"
+        concepts_path = target_root / "Concepts"
+        people_path = target_root / "People"
+        projects_path = target_root / "Projects"
+        concepts_path.mkdir(parents=True, exist_ok=True)
+
+        if not daily_path.exists():
+            return []
+
+        wikilink_regex = re.compile(r"\[\[(?P<target>[^\]|#]+)(?:\|[^\]]+)?\]\]")
+        entity_references: dict[str, list[str]] = {}
+
+        for daily_file in sorted(daily_path.glob("*.md")):
+            if daily_file.name == "README.md":
+                continue
+            try:
+                text = daily_file.read_text(encoding="utf-8")
+                matches = wikilink_regex.findall(text)
+                for ent in set(matches):
+                    ent_clean = ent.strip()
+                    if ent_clean:
+                        entity_references.setdefault(ent_clean, []).append(daily_file.stem)
+            except Exception:
+                continue
+
+        promoted: list[str] = []
+        for entity_name, refs in entity_references.items():
+            if len(refs) < 2:
+                continue
+
+            # Check if concept/person/project note already exists
+            concept_file = concepts_path / f"{entity_name}.md"
+            person_file = people_path / f"{entity_name}.md"
+            project_file = projects_path / f"{entity_name}.md"
+
+            if concept_file.exists() or person_file.exists() or project_file.exists():
+                continue
+
+            # Promote to Concepts/
+            today_str = date.today().isoformat()
+            fm = {
+                "type": "semantic",
+                "aliases": [entity_name],
+                "tags": ["#concept", "#promoted"],
+                "entities": [f"[[{entity_name}]]"],
+                "date": today_str,
+            }
+            ref_links = "\n".join(f"- [[{ref}]]" for ref in refs)
+            body = (
+                f"# {entity_name}\n\n"
+                f"## Summary\n"
+                f"Promoted concept automatically extracted from episodic daily logs after {len(refs)} references.\n\n"
+                f"## Referenced Daily Notes\n"
+                f"{ref_links}\n"
+            )
+            fm_str = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
+            full_content = f"---\n{fm_str}\n---\n{body}"
+            concept_file.write_text(full_content, encoding="utf-8")
+            promoted.append(entity_name)
+
+        return promoted
 
     async def shutdown(self):
         if self._llm is not None:
             await self._llm.shutdown()
+
             self._llm = None
