@@ -77,7 +77,12 @@ class MemoryDistiller:
 
     def _calculate_importance(self, frontmatter: dict, content: str, age_days: int) -> float:
         """Score based on entities, backlinks, and age."""
-        base = frontmatter.get("importance", 0.5)
+        base = frontmatter.get("base_importance")
+        if base is None:
+            base = frontmatter.get("initial_importance")
+        if base is None:
+            base = frontmatter.get("importance", 0.5)
+            frontmatter["base_importance"] = base
         entities = len(re.findall(r'\[\[(.*?)\]\]', content))
         entity_boost = min(entities * 0.05, 0.3)
         decay = 0.5 ** (age_days / 30.0)
@@ -174,7 +179,9 @@ class MemoryDistiller:
                 summary = await self._generate_summary_llm(content)
                 fm["lifecycle"] = "summarized"
                 fm["importance"] = importance
-                self._write_file(file, fm, f"# Distilled Summary\n{summary}\n\n## Raw Logs\n{content}")
+                state = "summarized"
+                content = f"# Distilled Summary\n{summary}\n\n## Raw Logs\n{content}"
+                self._write_file(file, fm, content)
 
             # C. Promote highly important memories to Procedural/Conceptual
             if importance >= 0.75 and state in ["raw", "summarized"]:
@@ -199,6 +206,7 @@ class MemoryDistiller:
                 fm["lifecycle"] = "distilled"
                 fm["distilled_to"] = f"[[{proc_path.stem}]]"
                 self._write_file(file, fm, content)
+
 
     async def shutdown(self):
         if self._llm is not None:
