@@ -49,18 +49,34 @@ class ContextCompressor:
         return base_score # Default fallback
 
     def _semantic_deduplication(self, results: List[SearchResult]) -> List[SearchResult]:
-        """Remove highly redundant chunks (e.g., overlapping paragraphs)."""
+        """Remove highly redundant chunks while preserving full provenance and evidence IDs."""
         deduped = []
         for res in results:
             is_duplicate = False
             for existing in deduped:
                 if self._text_similarity(res.text, existing.text) > self.sim_threshold:
                     is_duplicate = True
-                    # Merge entities/metadata into the existing one
-                    existing.entities = list(set(existing.entities + res.entities))
+                    # Merge entities, evidence_ids, and rank_sources into the existing result
+                    existing.entities = list(dict.fromkeys(existing.entities + res.entities))
+                    existing.evidence_ids = list(dict.fromkeys(existing.evidence_ids + res.evidence_ids))
+                    existing.rank_sources = list(dict.fromkeys(existing.rank_sources + res.rank_sources))
                     break
             if not is_duplicate:
-                deduped.append(res)
+                deduped.append(
+                    SearchResult(
+                        chunk_id=res.chunk_id,
+                        text=res.text,
+                        score=res.score,
+                        importance=res.importance,
+                        source_file=res.source_file,
+                        entities=list(res.entities),
+                        memory_id=res.memory_id,
+                        revision_id=res.revision_id,
+                        memory_type=res.memory_type,
+                        rank_sources=list(res.rank_sources),
+                        evidence_ids=list(res.evidence_ids),
+                    )
+                )
         return deduped
 
     def _hierarchical_summarization(self, text: str, max_chunk_tokens: int) -> str:
@@ -68,53 +84,42 @@ class ContextCompressor:
         tokens = self._estimate_tokens(text)
         if tokens <= max_chunk_tokens:
             return text
-            
-        # Extractive: Keep first 2 and last 2 sentences (Procedural abstraction & TLDR)
+
         sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
         if len(sentences) <= 4:
             return text
-            
+
         summary = " ".join(sentences[:2]) + "\n... [Content Compressed] ...\n" + " ".join(sentences[-2:])
         return summary
 
     def compress(self, results: List[SearchResult], max_tokens: int = 2000, profile: str = "research") -> List[SearchResult]:
         """
         Main compression pipeline.
-        1. Score importance based on profile
-        2. Sort by importance
-        3. Semantic deduplication
-        4. Truncate/Summarize to fit token budget
+        1. Semantic deduplication preserving reranker order and evidence IDs
+        2. Greedy knapsack packing within max_tokens
         """
         if not results:
             return []
 
-        # 1 & 2: Score and sort
-        for r in results:
-            r.importance = self._score_importance(r, profile)
-        results.sort(key=lambda x: x.importance, reverse=True)
-
-        # 3: Deduplicate
         unique_results = self._semantic_deduplication(results)
-
-        # 4: Cluster & Fit to budget
         final_results = []
         current_tokens = 0
-        
-        # Entity clustering (group by primary entity if possible)
-        # For simplicity, we just greedily add the most important deduped chunks
+
         for r in unique_results:
             chunk_tokens = self._estimate_tokens(r.text)
-            
-            if current_tokens + chunk_tokens > max_tokens:
-                # Try summarizing the chunk to fit it in
+            if current_tokens + chunk_tokens <= max_tokens:
+                final_results.append(r)
+                current_tokens += chunk_tokens
+            else:
                 remaining_tokens = max_tokens - current_tokens
-                if remaining_tokens > 50:
-                    r.text = self._hierarchical_summarization(r.text, remaining_tokens)
-                    final_results.append(r)
-                    current_tokens += self._estimate_tokens(r.text)
-                break # Budget exhausted
-                
-            final_results.append(r)
-            current_tokens += chunk_tokens
+                if remaining_tokens >= 40 and chunk_tokens > remaining_tokens:
+                    summarized_text = self._hierarchical_summarization(r.text, remaining_tokens)
+                    if self._estimate_tokens(summarized_text) <= remaining_tokens:
+                        r.text = summarized_text
+                        final_results.append(r)
+                        current_tokens += self._estimate_tokens(summarized_text)
+                # Continue checking subsequent chunks
+                continue
 
         return final_results
+
