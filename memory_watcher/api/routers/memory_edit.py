@@ -149,14 +149,22 @@ async def delete_memory(request: DeleteRequest):
     file_path = _safe_request_path(request.path)
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {request.path}")
+    backup_path = _backup(file_path)
     archive_dir = _vault_root() / "Archive"
     archive_dir.mkdir(exist_ok=True)
     archive_path = archive_dir / file_path.name
     if archive_path.exists():
         archive_path = archive_dir / f"{file_path.stem}-{uuid.uuid4().hex[:8]}{file_path.suffix}"
     shutil.move(str(file_path), str(archive_path))
-    _log_edit("DELETE", request.path, f"reason: {request.reason}")
-    return {"status": "success", "path": request.path, "archived_to": str(archive_path.relative_to(_vault_root())), "message": "Memory archived."}
+    _log_edit("DELETE", request.path, f"reason: {request.reason}, backup: {backup_path.name}")
+    return {
+        "status": "success",
+        "path": request.path,
+        "backup": backup_path.relative_to(_vault_root()).as_posix(),
+        "archived_to": str(archive_path.relative_to(_vault_root())),
+        "message": "Memory archived with durable backup.",
+    }
+
 
 
 @router.post("/add-link")
