@@ -402,3 +402,19 @@ async def consolidate_memories():
         "summary": result.summary,
     }
 
+
+@app.post("/admin/maintenance/prune", tags=["Maintenance"])
+async def prune_maintenance(max_age_days: int = 30, outbox_retention_days: int = 7):
+    """Prune completed outbox records, finished jobs, and aged audit events."""
+    if pipeline.control_store is None:
+        raise HTTPException(status_code=503, detail="Control store not available")
+    result = await pipeline.control_store.prune_superseded_storage(
+        max_age_days=max_age_days,
+        outbox_retention_days=outbox_retention_days,
+    )
+    return {
+        "status": "success",
+        "pruned": result,
+    }
+
+

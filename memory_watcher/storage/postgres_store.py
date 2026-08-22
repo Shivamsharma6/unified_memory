@@ -1628,3 +1628,49 @@ class PostgresStore:
                     )
                 return len(rows)
 
+    async def prune_superseded_storage(
+        self,
+        max_age_days: int = 30,
+        outbox_retention_days: int = 7,
+    ) -> dict[str, int]:
+        """Prune completed outbox records, finished jobs, and aged audit events."""
+        async with self.pool.connection() as connection:
+            async with connection.transaction():
+                res_outbox = await connection.execute(
+                    """
+                    DELETE FROM vector_outbox
+                    WHERE status IN ('completed', 'abandoned')
+                      AND (completed_at < now() - (%s * interval '1 day')
+                           OR (completed_at IS NULL AND created_at < now() - (%s * interval '1 day')))
+                    """,
+                    (outbox_retention_days, outbox_retention_days),
+                )
+                pruned_outbox = res_outbox.rowcount if hasattr(res_outbox, "rowcount") and res_outbox.rowcount is not None else 0
+
+                res_jobs = await connection.execute(
+                    """
+                    DELETE FROM ingestion_jobs
+                    WHERE status IN ('succeeded', 'cancelled')
+                      AND (finished_at < now() - (%s * interval '1 day')
+                           OR (finished_at IS NULL AND updated_at < now() - (%s * interval '1 day')))
+                    """,
+                    (outbox_retention_days, outbox_retention_days),
+                )
+                pruned_jobs = res_jobs.rowcount if hasattr(res_jobs, "rowcount") and res_jobs.rowcount is not None else 0
+
+                res_audit = await connection.execute(
+                    """
+                    DELETE FROM memory_audit_events
+                    WHERE created_at < now() - (%s * interval '1 day')
+                    """,
+                    (max_age_days,),
+                )
+                pruned_audit = res_audit.rowcount if hasattr(res_audit, "rowcount") and res_audit.rowcount is not None else 0
+
+                return {
+                    "pruned_outbox": pruned_outbox,
+                    "pruned_jobs": pruned_jobs,
+                    "pruned_audit_events": pruned_audit,
+                }
+
+
