@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 class HybridRetrieval:
     RRF_CONSTANT = 60
+    ASYMMETRIC_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
+
 
     def __init__(
         self,
@@ -64,12 +66,13 @@ class HybridRetrieval:
         return [aliases.get(value, value) for value in request.collections]
 
     async def _query_vector(self, query: str) -> list[float]:
+        formatted = f"{self.ASYMMETRIC_QUERY_PREFIX}{query}".strip()
         document = Document(
             path="query",
-            raw_content=query,
+            raw_content=formatted,
             chunks=[
                 Chunk(
-                    content=query,
+                    content=formatted,
                     metadata=ChunkMetadata(chunk_id="query", source_file="query"),
                 )
             ],
@@ -120,6 +123,7 @@ class HybridRetrieval:
         entity_keys = self._entity_keys(request)
         filter_values = {
             "memory_types": self._memory_types(request),
+            "tags": request.tags,
             "projects": request.projects,
             "source_agents": request.source_agents,
             "include_historical": request.include_historical,
@@ -141,6 +145,7 @@ class HybridRetrieval:
                 query_vector,
                 limit=candidate_limit,
                 memory_types=filter_values["memory_types"],
+                tags=request.tags,
                 projects=request.projects,
                 source_agents=request.source_agents,
             )
