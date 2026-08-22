@@ -64,6 +64,9 @@ class ProjectedClaim:
     confidence: float
     evidence_memory_id: uuid.UUID
     evidence_path: str
+    valid_from: str | None = None
+    valid_to: str | None = None
+    invalidated_by: uuid.UUID | None = None
 
 
 @dataclass
@@ -92,9 +95,17 @@ def _context_at(text: str, start: int, end: int) -> str:
 
 def extract_projection(record: MemoryRecord) -> MemoryProjection:
     """Extract mentions and evidenced claims without promoting prose guesses."""
+    from datetime import datetime, timezone
 
     projection = MemoryProjection(memory_id=record.memory_id)
     entities: dict[str, ProjectedEntity] = {}
+
+    valid_from_ts = str(
+        record.timestamps.occurred
+        or record.timestamps.created
+        or record.frontmatter.get("date")
+        or datetime.now(timezone.utc).isoformat()
+    )
 
     def add_entity(name: str, *, aliases: list[str] | None = None, entity_type: str = "concept") -> str:
         canonical = clean_wikilink(name)
@@ -148,6 +159,7 @@ def extract_projection(record: MemoryRecord) -> MemoryProjection:
                 confidence=1.0,
                 evidence_memory_id=record.memory_id,
                 evidence_path=record.vault_path,
+                valid_from=valid_from_ts,
             )
         )
 
@@ -165,6 +177,7 @@ def extract_projection(record: MemoryRecord) -> MemoryProjection:
                 confidence=1.0 if relationship.status in {"explicit", "verified"} else 0.5,
                 evidence_memory_id=record.memory_id,
                 evidence_path=record.vault_path,
+                valid_from=valid_from_ts,
             )
         )
 
@@ -185,8 +198,10 @@ class GraphExtractor:
             "fixes": re.compile(r'(?:fixes|resolves|patches)\s+\[\[(.*?)\]\]', re.I),
             "caused_by": re.compile(r'(?:caused by|due to)\s+\[\[(.*?)\]\]', re.I),
             "improves": re.compile(r'(?:improves|enhances|optimizes)\s+\[\[(.*?)\]\]', re.I),
+            "replaces": re.compile(r'(?:replaces|supersedes|deprecates)\s+\[\[(.*?)\]\]', re.I),
             "references": re.compile(r'(?:see also|references?|mentioned)\s+\[\[(.*?)\]\]', re.I),
         }
+
         
         self.entity_types = ["project", "person", "technology", "procedure", "issue", "fix", "architecture", "concept"]
 
