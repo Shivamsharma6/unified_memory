@@ -1,8 +1,128 @@
-# Unified Agent Memory System
+# Unified Agent Memory System (UAMS)
 
-**Unified Agent Memory System (UAMS)** is a local-first shared memory for AI agents. Codex, Claude, Hermes, OpenClaw, VoiceAI, and custom agents can retrieve the same durable facts, decisions, procedures, profiles, entity relationships, and bug-fix history instead of relearning them independently.
+<div align="center">
 
-The supported deployment runs on **one machine**. Human-readable Markdown is the source of truth; [[PostgreSQL]] and [[Qdrant]] make that truth fast, consistent, and searchable.
+[![PyPI Version](https://img.shields.io/pypi/v/uams-sdk?color=blue&style=for-the-badge)](https://pypi.org/project/uams-sdk/)
+[![CI Status](https://img.shields.io/github/actions/workflow/status/Shivamsharma6/unified_memory/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/Shivamsharma6/unified_memory/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
+[![Python: 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg?style=for-the-badge)](https://www.python.org/)
+[![GitHub Discussions](https://img.shields.io/badge/Community-Discussions-orange?style=for-the-badge)](https://github.com/Shivamsharma6/unified_memory/discussions)
+
+**A local-first, multi-agent shared brain combining Obsidian Markdown authority with PostgreSQL + Qdrant hybrid retrieval, bitemporal claim evolution, and MS-MARCO cross-encoder reranking.**
+
+[Quickstart](#-quickstart-in-30-seconds) • [Why UAMS?](#-why-uams-vs-alternatives) • [Framework Adapters](#-framework-adapters) • [Architecture](#architecture-at-a-glance) • [Contributing](CONTRIBUTING.md)
+
+</div>
+
+---
+
+> 🧪 **Join the Alpha Tester & Design Partner Program**: Are you building multi-agent systems with LangChain, CrewAI, AutoGen, or custom runtimes? [Read our Alpha Tester Guide](docs/community/ALPHA_TESTERS.md) to get direct architectural support and share feedback!
+
+---
+
+## ⚡ Quickstart in 30 Seconds
+
+### 1. Start UAMS via Docker (1 Command)
+```bash
+# Clone and launch PostgreSQL (pgvector) + Qdrant + UAMS Control Plane
+git clone https://github.com/Shivamsharma6/unified_memory.git
+cd unified_memory
+docker compose up -d
+```
+
+### 2. Install the Python SDK & Run Interactive Demo
+```bash
+pip install uams-sdk
+uams-demo
+```
+
+### 3. Or Connect in 3 Lines of Python
+```python
+import asyncio
+from uams_sdk import UAMSClient
+
+async def main():
+    client = UAMSClient(source_agent="Hermes", project="MyAgentTeam")
+    
+    # Store structured memory with automatic bitemporal distillation
+    await client.store_memory(
+        text="# Architecture Decision\n\nAdopted [[Qdrant]] for vector search and [[PostgreSQL]] for control plane.",
+        category="semantic",
+        sync=True
+    )
+    
+    # Retrieve with hybrid cross-encoder reranking
+    results = await client.search("What vector database was chosen?")
+    print(results["results"][0]["text"])
+
+asyncio.run(main())
+```
+
+---
+
+## 📊 Why UAMS? (vs. Alternatives)
+
+| Feature | **UAMS** | **Mem0** | **Zep** | **Graphiti** |
+| :--- | :---: | :---: | :---: | :---: |
+| **Authoritative Source of Truth** | **Human-Readable Markdown (Obsidian)** | Opaque Cloud / JSON | Postgres/Graph DB | Neo4j / Knowledge Graph |
+| **Inspectable Without Special Tools** | **Yes** (open in Obsidian / Vim) | No | No | No |
+| **Bitemporal Claims & Contradictions** | **Yes** (`valid_from`/`valid_to`/invalidation) | No | No | Yes |
+| **Multi-Stage Hybrid Retrieval** | **FTS + Qdrant + Sigmoid Cross-Encoder** | Vector Only | Hybrid Search | Graph + Vector |
+| **Multi-Agent Identity & Provenance** | **Yes** (`source_agent` + per-agent profiles) | User-Centric | Session-Centric | Entity-Centric |
+| **Local-First & Offline Privacy** | **100% Local (Docker / POSIX)** | Cloud Dependent | Cloud/Self-Hosted | Self-Hosted |
+| **Optimistic Concurrency Control** | **Yes** (HTTP 409 on content hash mismatch) | No | No | No |
+
+---
+
+## 🔌 Framework Adapters
+
+Drop UAMS directly into your agent stack with zero friction:
+
+### LangChain / LangGraph
+```python
+from uams_sdk.adapters.langchain import UAMSLangChainRetriever, UAMSLangChainChatMessageHistory
+
+# Drop-in Retriever
+retriever = UAMSLangChainRetriever(limit=5, source_agent="LangChainAgent")
+docs = retriever.get_relevant_documents("What were our architecture decisions?")
+
+# Drop-in Chat History
+history = UAMSLangChainChatMessageHistory(session_id="session_01")
+history.add_message("user", "We decided to migrate to Postgres 16")
+```
+
+### CrewAI
+```python
+from uams_sdk.adapters.crewai import UAMSCrewAIMemoryStorage
+
+memory_storage = UAMSCrewAIMemoryStorage(source_agent="LeadArchitect", project="AutoCrew")
+memory_storage.save("Completed database migration task", metadata={"task": "DBMigration"})
+```
+
+### LlamaIndex
+```python
+from uams_sdk.adapters.llamaindex import UAMSLlamaIndexRetriever
+
+retriever = UAMSLlamaIndexRetriever(limit=5)
+nodes = retriever.retrieve("Retrieve recent deployment procedures")
+```
+
+### Claude Desktop & Cursor (MCP Integration)
+Add UAMS as a Model Context Protocol tool in `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "uams": {
+      "command": "uams-mcp",
+      "env": {
+        "UAMS_BASE_URL": "http://localhost:8000"
+      }
+    }
+  }
+}
+```
+
+---
 
 ## What UAMS Guarantees
 
@@ -13,6 +133,7 @@ The supported deployment runs on **one machine**. Human-readable Markdown is the
 - **Safe revision activation:** A new Markdown revision does not become current until its complete vector projection is acknowledged. The previous active revision remains searchable if embedding or Qdrant delivery fails.
 - **Evidence-bearing results:** Normal retrieval returns `memory_id`, `revision_id`, source path, and chunk evidence and rejects superseded, archived, and deleted revisions.
 - **Local-by-default boundaries:** The API, PostgreSQL, and Qdrant bind to loopback addresses by default.
+
 
 The architectural contract is:
 
