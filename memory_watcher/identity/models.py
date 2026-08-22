@@ -78,12 +78,24 @@ class IdentityDomains(BaseModel):
 class TraitEvidence(BaseModel):
     """A single piece of evidence supporting a trait."""
     evidence_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    source_memory_id: str = Field(description="ID of the episodic memory this came from")
-    source_type: str = Field(description="episodic | procedural | reflection")
-    content: str = Field(description="The actual evidence text")
+    source_memory_id: str = Field(default="", description="ID of the episodic memory this came from")
+    source_type: str = Field(default="episodic", description="episodic | procedural | reflection")
+    content: str = Field(default="", description="The actual evidence text")
+    context_snippet: Optional[str] = None
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     strength: float = Field(default=0.5, ge=0.0, le=1.0, description="How strongly this supports the trait")
     detected_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     context: Dict[str, Any] = Field(default_factory=dict)
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.context_snippet and not self.content:
+            self.content = self.context_snippet
+        elif self.content and not self.context_snippet:
+            self.context_snippet = self.content
+        if self.confidence and not self.strength:
+            self.strength = self.confidence
+        elif self.strength and not self.confidence:
+            self.confidence = self.strength
 
     def to_payload(self) -> Dict[str, Any]:
         return {
@@ -91,6 +103,8 @@ class TraitEvidence(BaseModel):
             "source_memory_id": self.source_memory_id,
             "source_type": self.source_type,
             "content": self.content,
+            "context_snippet": self.context_snippet,
+            "confidence": self.confidence,
             "strength": self.strength,
             "detected_at": self.detected_at,
             "context": self.context,
@@ -101,22 +115,32 @@ class TraitEvidence(BaseModel):
 
 class StabilityScore(BaseModel):
     """How stable/reliable a trait is over time."""
-    raw_score: float = Field(description="0.0–1.0 stability")
-    evidence_count: int = Field(description="Number of supporting evidences")
-    time_span_days: float = Field(description="Days between first and last evidence")
-    reinforcement_rate: float = Field(description="How often trait is reinforced")
-    contradiction_count: int = Field(description="Number of contradictions found")
-    category: str = Field(description="core | persistent | adaptive | temporary")
+    raw_score: float = Field(default=0.0, description="0.0–1.0 stability")
+    evidence_count: int = Field(default=0, description="Number of supporting evidences")
+    time_span_days: float = Field(default=0.0, description="Days between first and last evidence")
+    reinforcement_rate: float = Field(default=0.0, description="How often trait is reinforced")
+    contradiction_count: int = Field(default=0, description="Number of contradictions found")
+    category: str = Field(default="adaptive", description="core | persistent | adaptive | temporary")
+    label: str = Field(default="adaptive")
 
     @field_validator("raw_score")
     @classmethod
     def clamp(cls, v):
         return max(0.0, min(1.0, v))
 
-    @property
-    def label(self) -> str:
+    def compute(self) -> float:
+        freq_factor = min(self.evidence_count / 10.0, 1.0)
+        time_factor = min(self.time_span_days / 90.0, 1.0)
+        contra_penalty = min(self.contradiction_count * 0.2, 0.6)
+        self.raw_score = round(
+            max(0.0, min(1.0, (freq_factor * 0.4 + time_factor * 0.4 + self.reinforcement_rate * 0.2) - contra_penalty)),
+            4
+        )
+        return self.raw_score
+
+    def get_tier(self) -> str:
         if self.raw_score >= 0.8:
-            return "high"
+            return "core"
         if self.raw_score >= 0.5:
             return "medium"
         if self.raw_score >= 0.25:
@@ -144,9 +168,12 @@ class TraitObject(BaseModel):
     Contains evidence, confidence, evolution history,
     and supporting memories for auditability.
     """
-    trait_id: str = Field(description="Unique trait identifier, e.g. 'systems_thinker'")
-    domain_id: str = Field(description="Which identity domain this belongs to")
-    label: str = Field(description="Human-readable label, e.g. 'Systems Thinker'")
+    trait_id: str = Field(default="trait", description="Unique trait identifier, e.g. 'systems_thinker'")
+    domain_id: str = Field(default="general", description="Which identity domain this belongs to")
+    label: str = Field(default="Trait", description="Human-readable label, e.g. 'Systems Thinker'")
+    name: Optional[str] = None
+    value: Optional[Any] = None
+    stability_score: Optional[float] = None
     confidence: float = Field(default=0.5, ge=0.0, le=1.0, description="Current confidence in this trait")
     stability: StabilityScore = Field(default_factory=lambda: StabilityScore(
         raw_score=0.0, evidence_count=0, time_span_days=0.0,
@@ -159,6 +186,14 @@ class TraitObject(BaseModel):
     evolution_history: List[Dict[str, Any]] = Field(default_factory=list)
     category: str = Field(default="adaptive", description="core | persistent | adaptive | temporary")
     tags: List[str] = Field(default_factory=list)
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.name and not self.trait_id:
+            self.trait_id = self.name
+        if self.name and not self.label:
+            self.label = self.name
+        if self.stability_score is not None:
+            self.stability.raw_score = self.stability_score
 
     @field_validator("confidence")
     @classmethod
@@ -196,15 +231,60 @@ class TraitObject(BaseModel):
             "trait_id": self.trait_id,
             "domain_id": self.domain_id,
             "label": self.label,
+            "name": self.name or self.trait_id,
+            "value": self.value,
             "confidence": self.confidence,
+            "stability_score": self.stability.raw_score,
             "stability": self.stability.to_payload(),
+            "evidence": [e.to_payload() for e in self.evidence],
             "evidence_count": len(self.evidence),
             "supporting_memory_ids": self.supporting_memory_ids,
             "first_detected": self.first_detected,
             "last_reinforced": self.last_reinforced,
+            "evolution_history": self.evolution_history,
             "category": self.category,
             "tags": self.tags,
         }
+
+    @classmethod
+    def from_payload(cls, data: Dict[str, Any]) -> "TraitObject":
+        ev_list = []
+        for e in data.get("evidence", []):
+            if isinstance(e, TraitEvidence):
+                ev_list.append(e)
+            elif isinstance(e, dict):
+                ev_list.append(TraitEvidence(**e))
+
+        stability_data = data.get("stability", {})
+        if isinstance(stability_data, dict) and stability_data:
+            stability = StabilityScore(**stability_data)
+        elif isinstance(stability_data, StabilityScore):
+            stability = stability_data
+        else:
+            raw_s = float(data.get("stability_score", 0.0))
+            stability = StabilityScore(
+                raw_score=raw_s, evidence_count=len(ev_list), time_span_days=0.0,
+                reinforcement_rate=0.0, contradiction_count=0, category="adaptive"
+            )
+
+        return cls(
+            trait_id=data.get("trait_id") or data.get("name", "trait"),
+            domain_id=data.get("domain_id", "general"),
+            label=data.get("label") or data.get("name", "Trait"),
+            name=data.get("name"),
+            value=data.get("value"),
+            stability_score=data.get("stability_score"),
+            confidence=float(data.get("confidence", 0.5)),
+            stability=stability,
+            evidence=ev_list,
+            supporting_memory_ids=data.get("supporting_memory_ids", []),
+            first_detected=data.get("first_detected"),
+            last_reinforced=data.get("last_reinforced"),
+            evolution_history=data.get("evolution_history", []),
+            category=data.get("category", "adaptive"),
+            tags=data.get("tags", []),
+        )
+
 
 
 # ── Identity Profile ──────────────────────────────────────────────
@@ -280,12 +360,20 @@ class IdentityProfile(BaseModel):
 class IdentityVersion(BaseModel):
     """A snapshot of identity at a point in time."""
     version_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    version_number: int = Field(description="Sequential version number")
-    entity_id: str = Field(description="Which entity this belongs to")
+    version_number: int = Field(default=1, description="Sequential version number")
+    entity_id: str = Field(default="", description="Which entity this belongs to")
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     traits_snapshot: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     change_summary: str = Field(default="", description="What changed from previous version")
     trigger: str = Field(default="manual", description="manual | extraction | stability_update | contradiction")
+
+    @property
+    def version(self) -> int:
+        return self.version_number
+
+    @property
+    def commit_message(self) -> str:
+        return self.change_summary
 
     def to_payload(self) -> Dict[str, Any]:
         return {
@@ -297,6 +385,7 @@ class IdentityVersion(BaseModel):
             "change_summary": self.change_summary,
             "trigger": self.trigger,
         }
+
 
 
 # ── Identity Weight ───────────────────────────────────────────────

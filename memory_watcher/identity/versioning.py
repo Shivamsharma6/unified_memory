@@ -22,6 +22,9 @@ from identity.models import (
 logger = logging.getLogger(__name__)
 
 
+import json
+from pathlib import Path
+
 class IdentityVersioningEngine:
     """
     Manages identity versions — snapshots of identity at points in time.
@@ -33,52 +36,94 @@ class IdentityVersioningEngine:
       - Simulating "what if" temporal paths
     """
 
-    def __init__(self, max_versions: int = 50):
+    def __init__(self, max_versions: int = 50, storage_dir: Optional[Any] = None):
         self.versions: Dict[str, List[IdentityVersion]] = {}  # entity_id -> versions
         self.max_versions = max_versions
+        self.storage_dir = Path(storage_dir) if storage_dir else None
+        if self.storage_dir:
+            self.storage_dir.mkdir(parents=True, exist_ok=True)
+            self._load_all_versions()
+
+    def _safe_id(self, entity_id: str) -> str:
+        return entity_id.replace(" ", "_").replace("/", "_")
+
+    def _load_all_versions(self) -> None:
+        if not self.storage_dir:
+            return
+        for file in self.storage_dir.glob("*_versions.json"):
+            try:
+                data = json.loads(file.read_text(encoding="utf-8"))
+                if isinstance(data, list):
+                    versions = [IdentityVersion(**item) for item in data]
+                    if versions:
+                        self.versions[versions[0].entity_id] = versions
+            except Exception as e:
+                logger.warning(f"Failed to load versions from {file}: {e}")
+
+    def _save_versions(self, entity_id: str) -> None:
+        if not self.storage_dir or entity_id not in self.versions:
+            return
+        try:
+            safe = self._safe_id(entity_id)
+            target = self.storage_dir / f"{safe}_versions.json"
+            payload = [v.to_payload() for v in self.versions[entity_id]]
+            target.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        except Exception as e:
+            logger.error(f"Failed to persist versions for {entity_id}: {e}")
 
     def create_version(
-        self, profile: IdentityProfile, trigger: str = "manual",
-        change_summary: str = ""
+        self,
+        profile_or_entity: Any,
+        profile_or_trigger: Any = "manual",
+        change_summary: str = "",
+        trigger: str = "manual",
     ) -> IdentityVersion:
         """Create a versioned snapshot of the current identity profile."""
-        # Get existing versions for this entity
-        entity_versions = self.versions.get(profile.entity_id, [])
+        if isinstance(profile_or_entity, str):
+            entity_id = profile_or_entity
+            profile = profile_or_trigger
+            summary = change_summary
+            trig = trigger
+        else:
+            profile = profile_or_entity
+            entity_id = profile.entity_id
+            trig = profile_or_trigger if isinstance(profile_or_trigger, str) else "manual"
+            summary = change_summary
 
-        # Next version number
+        entity_versions = self.versions.get(entity_id, [])
+
         next_number = max((v.version_number for v in entity_versions), default=0) + 1
 
-        # Create traits snapshot
         traits_snapshot = {
             tid: trait.to_payload() for tid, trait in profile.traits.items()
         }
 
         version = IdentityVersion(
             version_number=next_number,
-            entity_id=profile.entity_id,
+            entity_id=entity_id,
             traits_snapshot=traits_snapshot,
-            change_summary=change_summary or self._summarize_changes(
+            change_summary=summary or self._summarize_changes(
                 entity_versions[-1] if entity_versions else None,
                 traits_snapshot
             ),
-            trigger=trigger,
+            trigger=trig,
         )
 
-        # Store version
-        if profile.entity_id not in self.versions:
-            self.versions[profile.entity_id] = []
-        self.versions[profile.entity_id].append(version)
+        if entity_id not in self.versions:
+            self.versions[entity_id] = []
+        self.versions[entity_id].append(version)
 
-        # Prune old versions
-        while len(self.versions[profile.entity_id]) > self.max_versions:
-            self.versions[profile.entity_id].pop(0)
+        while len(self.versions[entity_id]) > self.max_versions:
+            self.versions[entity_id].pop(0)
 
-        # Update profile version
-        profile.version = next_number
+        if hasattr(profile, "version"):
+            profile.version = next_number
+
+        self._save_versions(entity_id)
 
         logger.info(
-            f"[Versioning] Created v{next_number} for '{profile.entity_name}' "
-            f"(trigger: {trigger})"
+            f"[Versioning] Created v{next_number} for '{entity_id}' "
+            f"(trigger: {trig})"
         )
 
         return version
@@ -96,10 +141,15 @@ class IdentityVersioningEngine:
         entity_versions = self.versions.get(entity_id, [])
         return entity_versions[-1] if entity_versions else None
 
+    def get_history(self, entity_id: str) -> List[IdentityVersion]:
+        """Get the full list of IdentityVersion objects for an entity."""
+        return self.versions.get(entity_id, [])
+
     def get_version_history(self, entity_id: str) -> List[Dict[str, Any]]:
-        """Get the full version history for an entity."""
+        """Get the full version history payload for an entity."""
         entity_versions = self.versions.get(entity_id, [])
         return [v.to_payload() for v in entity_versions]
+
 
     def detect_drift(self, entity_id: str) -> Dict[str, Any]:
         """

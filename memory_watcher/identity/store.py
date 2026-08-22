@@ -29,7 +29,7 @@ class IdentityStore:
         self.stability = StabilityEngine()
         self.contradiction = ContradictionEngine()
         self.weighting = IdentityWeightingEngine()
-        self.versioning = IdentityVersioningEngine()
+        self.versioning = IdentityVersioningEngine(storage_dir=self.identity_dir)
         self.injection = IdentityInjector(self.weighting)
 
     def _profile_path(self, entity_id: str) -> Path:
