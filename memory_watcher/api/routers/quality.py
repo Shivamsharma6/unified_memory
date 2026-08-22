@@ -79,7 +79,7 @@ def score_memory(content: str) -> Dict[str, Any]:
     }
 
 
-from models.memory_record import get_vault_root
+from models.memory_record import get_vault_root, resolve_vault_path
 
 
 @router.post("/quality")
@@ -87,13 +87,16 @@ async def memory_quality(request: QualityRequest):
     if request.content:
         return score_memory(request.content)
     vault_root = get_vault_root()
-    file_path = vault_root / request.path
+    try:
+        file_path = resolve_vault_path(vault_root, request.path)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {request.path}")
     try:
         content = file_path.read_text(encoding="utf-8")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to read memory content")
     result = score_memory(content)
     result["path"] = request.path
     return result
@@ -104,16 +107,20 @@ async def batch_quality(paths: list[str]):
     results = []
     vault_root = get_vault_root()
     for path in paths:
-        file_path = vault_root / path
-        if file_path.exists():
-            try:
-                content = file_path.read_text(encoding="utf-8")
-                result = score_memory(content)
-                result["path"] = path
-                results.append(result)
-            except Exception:
-                results.append({"path": path, "score": 0.0, "error": "read_failed"})
-        else:
-            results.append({"path": path, "score": 0.0, "error": "not_found"})
+        try:
+            file_path = resolve_vault_path(vault_root, path)
+            if file_path.exists():
+                try:
+                    content = file_path.read_text(encoding="utf-8")
+                    result = score_memory(content)
+                    result["path"] = path
+                    results.append(result)
+                except Exception:
+                    results.append({"path": path, "score": 0.0, "error": "read_failed"})
+            else:
+                results.append({"path": path, "score": 0.0, "error": "not_found"})
+        except ValueError as e:
+            results.append({"path": path, "score": 0.0, "error": f"invalid_path: {e}"})
     return {"results": results}
+
 
