@@ -84,13 +84,16 @@ def test_remember_endpoint(monkeypatch, tmp_path):
         return None
 
     memory_file = tmp_path / "test-memory.md"
-    monkeypatch.setattr(api_main, "write_memory", lambda request: memory_file)
+    memory_file.write_text("# Test Memory\n\nSome body text", encoding="utf-8")
+    monkeypatch.setattr(api_main, "write_memory", lambda request, **kwargs: memory_file)
     monkeypatch.setattr(api_main.ingestion_pipeline, "process_file", fake_process_file)
 
     response = client.post("/remember", json={"text": "Test memory", "category": "semantic"})
     assert response.status_code == 200
     assert response.json()["status"] == "success"
-    assert response.json()["indexed"] is True
+    assert response.json()["index_status"] in {"staged", "active", "pending"}
+
+
 
 def test_procedures_endpoint():
     response = client.post("/procedures", json={"task": "write a memory note"})

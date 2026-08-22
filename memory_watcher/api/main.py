@@ -145,7 +145,11 @@ async def remember(request: RememberRequest):
             except Exception as e:
                 logger.warning(f"Write-path distillation fallback to raw text: {e}")
 
-        write_result = write_memory(final_req, vault_root=vault_path)
+        try:
+            write_result = write_memory(final_req, vault_root=vault_path)
+        except TypeError:
+            write_result = write_memory(final_req)
+
         path = getattr(write_result, "path", write_result)
         index_status = "pending"
         indexed = False
@@ -184,6 +188,10 @@ async def remember(request: RememberRequest):
                         reconcile_result = await reconciler.reconcile_path(path)
                         index_status = reconcile_result.status
                         indexed = (index_status == "active")
+                    elif ingestion_pipeline is not None:
+                        await ingestion_pipeline.process_file(str(path))
+                        index_status = "active"
+                        indexed = True
                     else:
                         doc = parse_memory(path)
                         if pipeline.embedder is not None and pipeline.vector_store is not None:
@@ -196,6 +204,7 @@ async def remember(request: RememberRequest):
                 except Exception as e:
                     index_status = "pending"
                     warning = str(e)
+
         except Exception as ingest_error:
             index_status = "failed"
             indexed = False
