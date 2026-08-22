@@ -22,4 +22,6 @@ def test_migrations_are_ordered():
         "002_projection_lifecycle.sql",
         "003_reconciliation_failure_paths.sql",
         "004_incremental_and_invariants.sql",
+        "005_bitemporal_claims.sql",
     ]
+

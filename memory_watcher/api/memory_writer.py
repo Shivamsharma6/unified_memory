@@ -123,62 +123,70 @@ def write_memory(request: RememberRequest, vault_root: Optional[Path] = None) ->
     incoming_title = _extract_title(incoming_body)
     incoming_slug = _slugify(incoming_title)
 
-    # 1. Deduplication / Update Check against existing files in category directory
-    for existing_file in sorted(directory.glob("*.md")):
-        if existing_file.name == "README.md":
-            continue
-        try:
-            ex_content = existing_file.read_text(encoding="utf-8")
-            ex_meta, ex_body = split_frontmatter(ex_content)
-            ex_title = _extract_title(ex_body)
-            ex_slug = _slugify(ex_title)
+    # 1. Deduplication / Update Check for semantic, procedural, and distilled memories
+    is_distilled_or_semantic = (
+        request.category.lower() not in {"episodic", "daily"}
+        or getattr(request, "distill", False)
+        or getattr(request, "dedup", False)
+    )
 
-            # Check for title/slug identity match
-            if ex_slug == incoming_slug or (incoming_title and ex_title and ex_title.strip().lower() == incoming_title.strip().lower()):
-                ex_raw_id = ex_meta.get("memory_id")
-                ex_id = UUID(str(ex_raw_id)) if ex_raw_id else uuid4()
-                ex_norm_body = " ".join(ex_body.split())
-                inc_norm_body = " ".join(incoming_body.split())
+    if is_distilled_or_semantic:
+        for existing_file in sorted(directory.glob("*.md")):
+            if existing_file.name == "README.md":
+                continue
+            try:
+                ex_content = existing_file.read_text(encoding="utf-8")
+                ex_meta, ex_body = split_frontmatter(ex_content)
+                ex_title = _extract_title(ex_body)
+                ex_slug = _slugify(ex_title)
 
-                # A. Exact duplicate -> NOOP
-                if inc_norm_body in ex_norm_body or ex_norm_body == inc_norm_body:
+                # Check for title/slug identity match
+                if ex_slug == incoming_slug or (incoming_title and ex_title and ex_title.strip().lower() == incoming_title.strip().lower()):
+                    ex_raw_id = ex_meta.get("memory_id")
+                    ex_id = UUID(str(ex_raw_id)) if ex_raw_id else uuid4()
+                    ex_norm_body = " ".join(ex_body.split())
+                    inc_norm_body = " ".join(incoming_body.split())
+
+                    # A. Exact duplicate -> NOOP
+                    if inc_norm_body in ex_norm_body or ex_norm_body == inc_norm_body:
+                        return MemoryWriteResult(
+                            memory_id=ex_id,
+                            path=existing_file,
+                            vault_path=existing_file.relative_to(base).as_posix(),
+                            decision="NOOP",
+                            index_status="unchanged",
+                        )
+
+                    # B. Novel update -> UPDATE existing file
+                    now_str = datetime.now(timezone.utc).isoformat()
+                    now_date = date.today().isoformat()
+                    ex_meta.setdefault("timestamps", {})
+                    if isinstance(ex_meta["timestamps"], dict):
+                        ex_meta["timestamps"]["updated"] = now_str
+                    ex_meta["tags"] = _normalize_tags([*_as_list(ex_meta.get("tags")), *request.tags])
+                    ex_meta["entities"] = _as_list([*_as_list(ex_meta.get("entities")), *request.entities])
+
+                    # Append update section
+                    updated_body = ex_body.strip()
+                    update_snippet = incoming_body.strip()
+                    if update_snippet.startswith(f"# {incoming_title}"):
+                        update_snippet = update_snippet[len(f"# {incoming_title}"):].strip()
+
+                    updated_content = f"{updated_body}\n\n## Update ({now_date})\n{update_snippet}"
+                    fm_str = yaml.safe_dump(ex_meta, sort_keys=False, allow_unicode=True).strip()
+                    full_updated_text = f"---\n{fm_str}\n---\n{updated_content}\n"
+
+                    atomic_write(existing_file, full_updated_text)
                     return MemoryWriteResult(
                         memory_id=ex_id,
                         path=existing_file,
                         vault_path=existing_file.relative_to(base).as_posix(),
-                        decision="NOOP",
-                        index_status="unchanged",
+                        decision="UPDATE",
+                        index_status="pending",
                     )
+            except Exception:
+                pass
 
-                # B. Novel update -> UPDATE existing file
-                now_str = datetime.now(timezone.utc).isoformat()
-                now_date = date.today().isoformat()
-                ex_meta.setdefault("timestamps", {})
-                if isinstance(ex_meta["timestamps"], dict):
-                    ex_meta["timestamps"]["updated"] = now_str
-                ex_meta["tags"] = _normalize_tags([*_as_list(ex_meta.get("tags")), *request.tags])
-                ex_meta["entities"] = _as_list([*_as_list(ex_meta.get("entities")), *request.entities])
-
-                # Append update section
-                updated_body = ex_body.strip()
-                update_snippet = incoming_body.strip()
-                if update_snippet.startswith(f"# {incoming_title}"):
-                    update_snippet = update_snippet[len(f"# {incoming_title}"):].strip()
-                
-                updated_content = f"{updated_body}\n\n## Update ({now_date})\n{update_snippet}"
-                fm_str = yaml.safe_dump(ex_meta, sort_keys=False, allow_unicode=True).strip()
-                full_updated_text = f"---\n{fm_str}\n---\n{updated_content}\n"
-
-                atomic_write(existing_file, full_updated_text)
-                return MemoryWriteResult(
-                    memory_id=ex_id,
-                    path=existing_file,
-                    vault_path=existing_file.relative_to(base).as_posix(),
-                    decision="UPDATE",
-                    index_status="pending",
-                )
-        except Exception:
-            pass
 
     # 2. No matching note -> ADD new note
     generated_id = uuid4()

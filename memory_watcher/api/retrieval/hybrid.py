@@ -240,7 +240,8 @@ class HybridRetrieval:
                         chunk_id=item["chunk_id"],
                         text=payload.get("text", ""),
                         score=initial_score,
-                        importance=round(memory_importance + graph_boost + profile_boost + temporal_boost, 4),
+                        importance=round(min(1.25, memory_importance + graph_boost + profile_boost + temporal_boost), 4),
+
                         source_file=payload.get("source_file", "unknown"),
                         entities=sorted(result_entity_keys),
                         memory_id=str(memory_id),
