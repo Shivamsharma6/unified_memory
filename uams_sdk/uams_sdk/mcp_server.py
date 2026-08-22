@@ -68,6 +68,12 @@ async def search_memory(
     limit: int = 5,
     entities: list[str] | None = None,
     compress: bool = True,
+    memory_types: list[str] | None = None,
+    tags: list[str] | None = None,
+    projects: list[str] | None = None,
+    source_agents: list[str] | None = None,
+    min_score: float = 0.0,
+    include_historical: bool = False,
 ) -> dict[str, Any]:
     """Search UAMS using hybrid semantic and graph-aware retrieval."""
     return await _client().search(
@@ -75,13 +81,31 @@ async def search_memory(
         limit=limit,
         entities=entities or [],
         compress=compress,
+        memory_types=memory_types or [],
+        tags=tags or [],
+        projects=projects or [],
+        source_agents=source_agents or [],
+        min_score=min_score,
+        include_historical=include_historical,
     )
 
 
 @mcp.tool()
-async def begin_task(task: str, max_tokens: int = 2000) -> dict[str, Any]:
+async def begin_task(
+    task: str,
+    max_tokens: int = 2000,
+    source_agent: str | None = None,
+    project: str | None = None,
+    session_id: str | None = None,
+) -> dict[str, Any]:
     """Default first call before work: retrieve procedures, context, and memory policy."""
-    return await _client().begin_task(task=task, max_tokens=max_tokens)
+    return await _client().begin_task(
+        task=task,
+        max_tokens=max_tokens,
+        source_agent=source_agent,
+        project=project,
+        session_id=session_id,
+    )
 
 
 @mcp.tool()
@@ -103,14 +127,31 @@ async def remember(
     text: str,
     category: str = "episodic",
     tags: list[str] | None = None,
+    source_agent: str | None = None,
+    project: str | None = None,
+    entities: list[str] | None = None,
+    sync: bool = False,
 ) -> dict[str, Any]:
     """Store a distilled memory in UAMS. Do not use for raw transcripts."""
-    ok = await _client().store_memory(
+    res = await _client().store_memory(
         text=text,
         category=category,
         tags=tags or [],
+        source_agent=source_agent,
+        project=project,
+        entities=entities or [],
+        sync=sync,
     )
-    return {"ok": ok, "category": category, "tags": tags or []}
+    return {
+        "ok": res.get("ok", False),
+        "memory_id": res.get("memory_id"),
+        "decision": res.get("decision", "ADD"),
+        "index_status": res.get("index_status", "active"),
+        "path": res.get("path"),
+        "error": res.get("error"),
+        "category": category,
+        "tags": tags or [],
+    }
 
 
 @mcp.tool()
@@ -123,6 +164,10 @@ async def end_task(
     entities: list[str] | None = None,
     tags: list[str] | None = None,
     category: str = "episodic",
+    source_agent: str | None = None,
+    project: str | None = None,
+    session_id: str | None = None,
+    sync: bool = False,
 ) -> dict[str, Any]:
     """Default final call after durable work: store distilled task outcome memory."""
     return await _client().end_task(
@@ -134,6 +179,10 @@ async def end_task(
         entities=entities or [],
         tags=tags or [],
         category=category,
+        source_agent=source_agent,
+        project=project,
+        session_id=session_id,
+        sync=sync,
     )
 
 
@@ -158,8 +207,13 @@ async def store_fix_summary(
     files: list[str] | None = None,
     entities: list[str] | None = None,
     tags: list[str] | None = None,
+    source_agent: str | None = None,
+    project: str | None = None,
+    sync: bool = False,
 ) -> dict[str, Any]:
     """Store a durable bug-fix memory with cause, resolution, files, and entities."""
+    agent = source_agent or os.getenv("UAMS_AGENT_NAME") or "unknown"
+    proj = project or os.getenv("UAMS_PROJECT")
     all_tags = list(dict.fromkeys((tags or []) + ["#bugfix", "#auto-distilled"]))
     linked_entities = " ".join(f"[[{entity}]]" for entity in entities or [])
     file_list = "\n".join(f"- `{path}`" for path in files or [])
@@ -167,11 +221,15 @@ async def store_fix_summary(
 
     import json
     tags_json = json.dumps(all_tags)
-    text = f"""---
+    frontmatter = f"""---
 type: procedural
 date: {today}
-tags: {tags_json}
----
+source_agent: {agent}"""
+    if proj:
+        frontmatter += f"\nproject: {proj}"
+    frontmatter += f"\ntags: {tags_json}\n---"
+
+    text = f"""{frontmatter}
 # Fix Summary: {issue}
 
 ## TL;DR
@@ -193,45 +251,59 @@ tags: {tags_json}
 Future agents should search for [[{issue}]], related files, and the listed entities before re-debugging this class of issue.
 """
 
-    ok = await _client().store_memory(text=text, category="procedural", tags=all_tags)
+    res = await _client().store_memory(
+        text=text,
+        category="procedural",
+        tags=all_tags,
+        source_agent=agent,
+        project=proj,
+        entities=entities or [],
+        sync=sync,
+    )
     return {
-        "ok": ok,
+        "ok": res.get("ok", False),
         "issue": issue,
         "category": "procedural",
         "tags": all_tags,
+        "memory_id": res.get("memory_id"),
+        "error": res.get("error"),
     }
 
 
 @mcp.tool()
-async def get_identity(entity_id: str = "default") -> dict[str, Any]:
-    """Get the identity profile for an entity (traits, confidence, version)."""
-    return await _client().get_identity(entity_id=entity_id)
+async def get_identity(entity_id: str | None = None) -> dict[str, Any]:
+    """Get the identity profile for an entity or the caller agent (traits, confidence, version)."""
+    resolved_id = entity_id or os.getenv("UAMS_AGENT_NAME") or "default"
+    return await _client().get_identity(entity_id=resolved_id)
 
 
 @mcp.tool()
 async def inject_identity(
-    entity_id: str = "default",
+    entity_id: str | None = None,
     query: str = "",
     task_type: str = "general",
 ) -> dict[str, Any]:
     """Inject identity context into agent reasoning for personalized responses."""
+    resolved_id = entity_id or os.getenv("UAMS_AGENT_NAME") or "default"
     return await _client().inject_identity(
-        entity_id=entity_id, query=query, task_type=task_type
+        entity_id=resolved_id, query=query, task_type=task_type
     )
 
 
 @mcp.tool()
 async def extract_identity(
-    entity_id: str = "default",
+    entity_id: str | None = None,
     entity_name: str = "Agent",
     memories: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Extract identity traits from episodic memories."""
+    resolved_id = entity_id or os.getenv("UAMS_AGENT_NAME") or "default"
     return await _client().extract_identity(
-        entity_id=entity_id,
+        entity_id=resolved_id,
         entity_name=entity_name,
         memories=memories or [],
     )
+
 
 
 @mcp.tool()

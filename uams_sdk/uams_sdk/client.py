@@ -1,3 +1,4 @@
+import os
 import httpx
 import logging
 import json
@@ -11,10 +12,23 @@ logger = logging.getLogger(__name__)
 class UAMSClient:
     """
     Unified Agent Memory System (UAMS) SDK Client.
-    Shared across Hermes, OpenClaw, and VoiceAI.
+    Shared across Hermes, OpenClaw, VoiceAI, Antigravity.
     """
-    def __init__(self, base_url: str = "http://localhost:8000", cache_ttl: int = 300):
+    def __init__(
+        self,
+        base_url: str = "http://localhost:8000",
+        cache_ttl: int = 300,
+        source_agent: Optional[str] = None,
+        project: Optional[str] = None,
+    ):
         self.base_url = base_url
+        self.source_agent = (
+            source_agent
+            or os.getenv("UAMS_AGENT_NAME")
+            or os.getenv("UAMS_SOURCE_AGENT")
+            or "unknown"
+        )
+        self.project = project or os.getenv("UAMS_PROJECT")
         self.timeout = httpx.Timeout(15.0, connect=5.0)
         self.cache = SDKCache(ttl=cache_ttl)
 
@@ -47,13 +61,31 @@ class UAMSClient:
             except httpx.RequestError as e:
                 raise UAMSConnectionError(f"Connection error to UAMS {endpoint}: {str(e)}")
 
-    async def search(self, query: str, limit: int = 5, entities: List[str] = None, compress: bool = True) -> Dict[str, Any]:
+    async def search(
+        self,
+        query: str,
+        limit: int = 5,
+        entities: List[str] = None,
+        compress: bool = True,
+        memory_types: List[str] = None,
+        tags: List[str] = None,
+        projects: List[str] = None,
+        source_agents: List[str] = None,
+        min_score: float = 0.0,
+        include_historical: bool = False,
+    ) -> Dict[str, Any]:
         """Semantic + Graph hybrid retrieval."""
         payload = {
             "query": query,
             "limit": limit,
             "entities": entities or [],
-            "compress": compress
+            "compress": compress,
+            "memory_types": memory_types or [],
+            "tags": tags or [],
+            "projects": projects or ([self.project] if self.project else []),
+            "source_agents": source_agents or [],
+            "min_score": min_score,
+            "include_historical": include_historical,
         }
         return await self._request("POST", "/search", payload, use_cache=True)
 
@@ -67,12 +99,27 @@ class UAMSClient:
         res = await self._request("POST", f"/procedures", {"task": task}, use_cache=True)
         return res.get("procedures", [])
 
-    async def begin_task(self, task: str, max_tokens: int = 2000) -> Dict[str, Any]:
+    async def begin_task(
+        self,
+        task: str,
+        max_tokens: int = 2000,
+        source_agent: Optional[str] = None,
+        project: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Default memory preflight agents should call before doing work."""
+        agent = source_agent or self.source_agent
+        proj = project or self.project
+        import uuid as _uuid
+        active_session_id = session_id or str(_uuid.uuid4())
+
         procedures = await self.retrieve_procedures(task)
         context = await self.retrieve_context(task, max_tokens=max_tokens)
         return {
+            "session_id": active_session_id,
             "task": task,
+            "source_agent": agent,
+            "project": proj,
             "status": "ready",
             "procedures": procedures,
             "context": context,
@@ -84,16 +131,43 @@ class UAMSClient:
             ),
         }
 
-    async def store_memory(self, text: str, category: str = "episodic", tags: List[str] = None) -> bool:
+    async def store_memory(
+        self,
+        text: str,
+        category: str = "episodic",
+        tags: List[str] = None,
+        source_agent: Optional[str] = None,
+        project: Optional[str] = None,
+        entities: List[str] = None,
+        sync: bool = False,
+        distill: bool = False,
+    ) -> Dict[str, Any]:
         """Agent memory write support. Clears cache to ensure fresh reads."""
-        payload = {"text": text, "category": category, "tags": tags or []}
+        agent = source_agent or self.source_agent
+        proj = project or self.project
+        payload = {
+            "text": text,
+            "category": category,
+            "tags": tags or [],
+            "source_agent": agent,
+            "project": proj,
+            "entities": entities or [],
+            "sync": sync,
+            "distill": distill,
+        }
         try:
-            await self._request("POST", "/remember", payload, use_cache=False)
-            self.cache.clear() # Invalidate cache on write
-            return True
+            res = await self._request("POST", "/remember", payload, use_cache=False)
+            self.cache.clear()
+            return {
+                "ok": True,
+                "memory_id": res.get("memory_id"),
+                "decision": res.get("decision", "ADD"),
+                "index_status": res.get("index_status", "active"),
+                "path": res.get("path"),
+            }
         except UAMSError as e:
             logger.error(f"Failed to store memory: {e}")
-            return False
+            return {"ok": False, "error": str(e)}
 
     async def end_task(
         self,
@@ -105,8 +179,14 @@ class UAMSClient:
         entities: Optional[List[str]] = None,
         tags: Optional[List[str]] = None,
         category: str = "episodic",
+        source_agent: Optional[str] = None,
+        project: Optional[str] = None,
+        session_id: Optional[str] = None,
+        sync: bool = False,
     ) -> Dict[str, Any]:
         """Store a distilled task outcome after durable work completes."""
+        agent = source_agent or self.source_agent
+        proj = project or self.project
         all_tags = list(dict.fromkeys((tags or []) + ["#auto-distilled", "#task-outcome"]))
         entity_links = " ".join(f"[[{entity}]]" for entity in entities or [])
         file_lines = "\n".join(f"- `{path}`" for path in files or []) or "- Not specified"
@@ -115,11 +195,17 @@ class UAMSClient:
         today = date.today().isoformat()
 
         tags_json = json.dumps(all_tags)
-        text = f"""---
+        frontmatter = f"""---
 type: {category}
 date: {today}
-tags: {tags_json}
----
+source_agent: {agent}"""
+        if proj:
+            frontmatter += f"\nproject: {proj}"
+        if session_id:
+            frontmatter += f"\nsession_id: {session_id}"
+        frontmatter += f"\ntags: {tags_json}\n---"
+
+        text = f"""{frontmatter}
 # Task Outcome: {task}
 
 ## TL;DR
@@ -140,8 +226,25 @@ tags: {tags_json}
 ## Retrieval Notes
 Future agents should search for [[{task}]], the listed entities, and the listed files before repeating related work.
 """
-        ok = await self.store_memory(text=text, category=category, tags=all_tags)
-        return {"ok": ok, "category": category, "tags": all_tags}
+        store_res = await self.store_memory(
+            text=text,
+            category=category,
+            tags=all_tags,
+            source_agent=agent,
+            project=proj,
+            entities=entities or [],
+            sync=sync,
+        )
+        return {
+            "ok": store_res.get("ok", False),
+            "category": category,
+            "tags": all_tags,
+            "memory_id": store_res.get("memory_id"),
+            "decision": store_res.get("decision"),
+            "error": store_res.get("error"),
+            "session_id": session_id,
+        }
+
 
     async def distill_memory(self, topic: str) -> str:
         """Trigger summarization/distillation of a topic."""
