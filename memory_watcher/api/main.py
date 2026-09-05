@@ -28,7 +28,7 @@ from models.memory_record import get_vault_root, parse_memory
 app = FastAPI(
     title="Unified Agent Memory API",
     description="Advanced Retrieval API for Hermes, OpenClaw, and VoiceAI",
-    version="1.2.0"
+    version="1.3.0"
 )
 
 app.include_router(graph_router, dependencies=[Depends(verify_agent_auth)])
