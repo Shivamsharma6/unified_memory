@@ -43,14 +43,21 @@ async def reindex():
     report = await reconciler.scan(force=True)
 
     logger.info(
-        "Reconciliation scan finished: processed=%d created=%d updated=%d deleted=%d skipped=%d errors=%d",
-        report.processed,
-        report.created,
-        report.updated,
+        "Reconciliation scan finished: discovered=%d staged=%d unchanged=%d archived=%d deleted=%d failed=%d",
+        report.discovered,
+        report.staged,
+        report.unchanged,
+        report.archived,
         report.deleted,
-        report.skipped,
-        report.errors,
+        report.failed,
     )
+
+    try:
+        from scripts.force_graph_rebuild import rebuild_graph
+        logger.info("Rebuilding knowledge graph JSON and interactive visualization...")
+        await rebuild_graph()
+    except Exception as e:
+        logger.warning("Knowledge graph rebuild skipped/failed: %s", e)
 
     await control_store.close()
     await vector_store.close()

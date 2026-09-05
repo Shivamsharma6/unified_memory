@@ -222,9 +222,10 @@ async def store_fix_summary(
     agent = source_agent or os.getenv("UAMS_AGENT_NAME") or "unknown"
     proj = project or os.getenv("UAMS_PROJECT")
     all_tags = list(dict.fromkeys((tags or []) + ["#bugfix", "#auto-distilled"]))
-    linked_entities = " ".join(f"[[{entity}]]" for entity in entities or [])
+    linked_entities = " ".join(f"[[{entity.strip('[]')}]]" for entity in entities or [])
     file_list = "\n".join(f"- `{path}`" for path in files or [])
     today = date.today().isoformat()
+    clean_issue = issue.strip("[]")
 
     import json
     tags_json = json.dumps(all_tags)
@@ -237,13 +238,13 @@ source_agent: {agent}"""
     frontmatter += f"\ntags: {tags_json}\n---"
 
     text = f"""{frontmatter}
-# Fix Summary: {issue}
+# Fix Summary: {clean_issue}
 
 ## TL;DR
-[[{issue}]] was caused by {cause} and resolved by {resolution}.
+[[{clean_issue}]] was caused by {cause} and resolved by {resolution}.
 
 ## Entities
-{linked_entities or f"[[{issue}]]"}
+{linked_entities or f"[[{clean_issue}]]"}
 
 ## Files
 {file_list or "- Not specified"}

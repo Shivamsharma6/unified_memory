@@ -48,7 +48,13 @@ async def rebuild_graph():
             print(f"Failed to process {file_path}: {e}")
             
     store.export_json(str(vault_path / "memory_watcher" / "knowledge_graph.json"))
-    print("Graph rebuilt and saved.")
+    store.export_json(str(vault_path / "knowledge_graph.json"))
+    print("Graph rebuilt and saved to both root and memory_watcher.")
+    try:
+        from scripts.generate_html_graph import generate_html
+        generate_html()
+    except Exception as e:
+        print(f"Interactive HTML graph generation skipped: {e}")
     
     G = store.G
     
@@ -68,4 +74,5 @@ async def rebuild_graph():
         if rel in ["uses", "fixes", "depends_on", "caused_by"]:
             print(f"[{u}] --({rel})--> [{v}]")
 
-asyncio.run(rebuild_graph())
+if __name__ == "__main__":
+    asyncio.run(rebuild_graph())

@@ -232,7 +232,8 @@ async def add_link(request: AddLinkRequest):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {request.path}")
     content = file_path.read_text(encoding="utf-8")
-    link = f"[[{request.entity}]]"
+    clean_entity = request.entity.strip("[]")
+    link = f"[[{clean_entity}]]"
     if link in content:
         return {"status": "noop", "message": f"Link {link} already exists."}
     if "tags:" in content:

@@ -219,11 +219,12 @@ class UAMSClient:
         agent = source_agent or self.source_agent
         proj = project or self.project
         all_tags = list(dict.fromkeys((tags or []) + ["#auto-distilled", "#task-outcome"]))
-        entity_links = " ".join(f"[[{entity}]]" for entity in entities or [])
+        entity_links = " ".join(f"[[{entity.strip('[]')}]]" for entity in entities or [])
         file_lines = "\n".join(f"- `{path}`" for path in files or []) or "- Not specified"
         decision_lines = "\n".join(f"- {item}" for item in decisions or []) or "- None recorded"
         fix_lines = "\n".join(f"- {item}" for item in fixes or []) or "- None recorded"
         today = date.today().isoformat()
+        clean_task = task.strip("[]")
 
         tags_json = json.dumps(all_tags)
         frontmatter = f"""---
@@ -237,13 +238,13 @@ source_agent: {agent}"""
         frontmatter += f"\ntags: {tags_json}\n---"
 
         text = f"""{frontmatter}
-# Task Outcome: {task}
+# Task Outcome: {clean_task}
 
 ## TL;DR
 {outcome.strip()}
 
 ## Entities
-{entity_links or f"[[{task}]]"}
+{entity_links or f"[[{clean_task}]]"}
 
 ## Files
 {file_lines}

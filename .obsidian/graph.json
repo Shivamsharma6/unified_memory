@@ -5,8 +5,51 @@
   "showAttachments": false,
   "hideUnresolved": false,
   "showOrphans": true,
-  "collapse-color-groups": true,
-  "colorGroups": [],
+  "collapse-color-groups": false,
+  "colorGroups": [
+    {
+      "query": "path:Concepts",
+      "color": {
+        "a": 1,
+        "rgb": 3382000
+      }
+    },
+    {
+      "query": "path:Tasks",
+      "color": {
+        "a": 1,
+        "rgb": 5361510
+      }
+    },
+    {
+      "query": "path:Daily",
+      "color": {
+        "a": 1,
+        "rgb": 16749099
+      }
+    },
+    {
+      "query": "path:People",
+      "color": {
+        "a": 1,
+        "rgb": 13393384
+      }
+    },
+    {
+      "query": "path:Projects",
+      "color": {
+        "a": 1,
+        "rgb": 16565273
+      }
+    },
+    {
+      "query": "path:Archive",
+      "color": {
+        "a": 1,
+        "rgb": 8818326
+      }
+    }
+  ],
   "collapse-display": false,
   "showArrow": true,
   "textFadeMultiplier": 0,
