@@ -181,6 +181,39 @@ def extract_projection(record: MemoryRecord) -> MemoryProjection:
             )
         )
 
+    # Extract Dataview-style inline relations: [[predicate::target]] or [predicate:: [[target]]]
+    dataview_double = re.compile(r"\[\[(?P<predicate>[a-zA-Z0-9_\-\s]+)::(?P<target>[^\]]+)\]\]")
+    dataview_single = re.compile(r"\[(?P<predicate>[a-zA-Z0-9_\-\s]+)::\s*\[\[(?P<target>[^\]]+)\]\]\]")
+
+    existing_claim_triples = {
+        (normalize_entity_key(c.subject), _predicate(c.predicate), normalize_entity_key(c.object))
+        for c in projection.claims
+    }
+
+    for pattern in (dataview_double, dataview_single):
+        for match in pattern.finditer(record.body):
+            pred_raw = match.group("predicate").strip()
+            target_raw = match.group("target").strip()
+            pred = _predicate(pred_raw)
+            obj_name = clean_wikilink(target_raw)
+            if pred and obj_name:
+                triple = (normalize_entity_key(record.title), pred, normalize_entity_key(obj_name))
+                if triple not in existing_claim_triples:
+                    add_entity(obj_name)
+                    projection.claims.append(
+                        ProjectedClaim(
+                            subject=record.title,
+                            predicate=pred,
+                            object=obj_name,
+                            status="explicit",
+                            confidence=1.0,
+                            evidence_memory_id=record.memory_id,
+                            evidence_path=record.vault_path,
+                            valid_from=valid_from_ts,
+                        )
+                    )
+                    existing_claim_triples.add(triple)
+
     projection.entities = list(entities.values())
     return projection
 

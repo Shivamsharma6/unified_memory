@@ -99,11 +99,17 @@ class LLMProvider:
                     base_url=self.config.base_url,
                     timeout=self.config.timeout,
                 )
-            elif self.config.provider == "openai":
+            elif self.config.provider in ("openai", "vllm", "llamacpp", "lmstudio", "openai-compatible"):
                 import httpx
+                base = (self.config.base_url or "https://api.openai.com/v1").rstrip("/")
+                if not base.endswith("/v1") and "api.openai.com" in base:
+                    base = f"{base}/v1"
+                headers = {}
+                if self.config.api_key:
+                    headers["Authorization"] = f"Bearer {self.config.api_key}"
                 self._client = httpx.AsyncClient(
-                    base_url="https://api.openai.com/v1",
-                    headers={"Authorization": f"Bearer {self.config.api_key}"},
+                    base_url=base,
+                    headers=headers,
                     timeout=self.config.timeout,
                 )
 
@@ -175,7 +181,7 @@ class LLMProvider:
                 content = data.get("message", {}).get("thinking", "")
             return content
 
-        elif self.config.provider == "openai":
+        elif self.config.provider in ("openai", "vllm", "llamacpp", "lmstudio", "openai-compatible"):
             resp = await client.post(
                 "/chat/completions",
                 json={

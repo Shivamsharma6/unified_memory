@@ -727,6 +727,130 @@ class PostgresStore:
                 )
             return values
 
+    async def activate_revision(
+        self,
+        memory_id: uuid.UUID,
+        revision_id: uuid.UUID,
+    ) -> uuid.UUID | None:
+        """Directly activate a staged revision, superseding the previous active revision."""
+        async with self.pool.connection() as connection:
+            async with connection.transaction():
+                document_result = await connection.execute(
+                    """
+                    SELECT current_revision_id
+                    FROM documents
+                    WHERE memory_id = %s
+                    FOR UPDATE
+                    """,
+                    (memory_id,),
+                )
+                document = await document_result.fetchone()
+                if document is None:
+                    raise RuntimeError(f"Memory {memory_id} no longer exists")
+                previous_revision_id = document["current_revision_id"]
+
+                if previous_revision_id and previous_revision_id != revision_id:
+                    await connection.execute(
+                        """
+                        UPDATE document_revisions
+                        SET state = 'superseded', superseded_at = now()
+                        WHERE revision_id = %s
+                        """,
+                        (previous_revision_id,),
+                    )
+                    await connection.execute(
+                        """
+                        UPDATE profile_facts
+                        SET status = 'superseded', valid_to = now()
+                        WHERE evidence_revision_id = %s AND status = 'active'
+                        """,
+                        (previous_revision_id,),
+                    )
+                    await connection.execute(
+                        """
+                        UPDATE claims
+                        SET status = 'superseded', valid_to = now()
+                        WHERE evidence_revision_id = %s AND status IN ('explicit', 'verified')
+                        """,
+                        (previous_revision_id,),
+                    )
+
+                await connection.execute(
+                    """
+                    UPDATE document_revisions
+                    SET state = 'active', activated_at = COALESCE(activated_at, now())
+                    WHERE revision_id = %s AND memory_id = %s
+                    """,
+                    (revision_id, memory_id),
+                )
+                await connection.execute(
+                    """
+                    UPDATE documents
+                    SET current_revision_id = %s, updated_at = now()
+                    WHERE memory_id = %s
+                    """,
+                    (revision_id, memory_id),
+                )
+                await connection.execute(
+                    """
+                    UPDATE profile_facts
+                    SET status = 'active', valid_from = now()
+                    WHERE evidence_revision_id = %s AND status = 'staged'
+                    """,
+                    (revision_id,),
+                )
+                await connection.execute(
+                    """
+                    UPDATE vector_outbox
+                    SET status = 'completed', completed_at = now(), locked_at = NULL, locked_by = NULL
+                    WHERE memory_id = %s AND revision_id = %s
+                    """,
+                    (memory_id, revision_id),
+                )
+                await connection.execute(
+                    """
+                    UPDATE ingestion_jobs
+                    SET status = 'succeeded', finished_at = now(), updated_at = now()
+                    WHERE revision_id = %s AND status IN ('pending', 'running', 'retrying')
+                    """,
+                    (revision_id,),
+                )
+                if previous_revision_id and previous_revision_id != revision_id:
+                    await connection.execute(
+                        """
+                        INSERT INTO vector_outbox (
+                            command, memory_id, revision_id, payload
+                        ) VALUES ('delete_revision', %s, %s, '{}'::jsonb)
+                        ON CONFLICT (command, memory_id, revision_id)
+                        DO UPDATE SET
+                            status = 'pending', attempts = 0,
+                            available_at = now(), locked_at = NULL,
+                            locked_by = NULL, last_error = NULL,
+                            completed_at = NULL
+                        """,
+                        (memory_id, previous_revision_id),
+                    )
+                await connection.execute(
+                    """
+                    INSERT INTO memory_audit_events (
+                        memory_id, revision_id, event_type, details
+                    ) VALUES (%s, %s, 'revision_activated', %s)
+                    """,
+                    (
+                        memory_id,
+                        revision_id,
+                        Jsonb(
+                            {
+                                "previous_revision_id": (
+                                    str(previous_revision_id) if previous_revision_id else None
+                                ),
+                                "direct_activation": True,
+                            }
+                        ),
+                    ),
+                )
+                return previous_revision_id
+
     async def acknowledge_vector_upsert(
         self,
         command: OutboxCommand,
@@ -763,6 +887,14 @@ class PostgresStore:
                         UPDATE profile_facts
                         SET status = 'superseded', valid_to = now()
                         WHERE evidence_revision_id = %s AND status = 'active'
+                        """,
+                        (previous_revision_id,),
+                    )
+                    await connection.execute(
+                        """
+                        UPDATE claims
+                        SET status = 'superseded', valid_to = now()
+                        WHERE evidence_revision_id = %s AND status IN ('explicit', 'verified')
                         """,
                         (previous_revision_id,),
                     )
@@ -908,6 +1040,7 @@ class PostgresStore:
         *,
         limit: int = 20,
         memory_types: list[str] | None = None,
+        tags: list[str] | None = None,
         projects: list[str] | None = None,
         source_agents: list[str] | None = None,
         include_historical: bool = False,
@@ -932,6 +1065,20 @@ class PostgresStore:
             if values:
                 conditions.append(f"{column} = ANY(%s)")
                 parameters.append(values)
+        if tags:
+            conditions.append(
+                """(
+                    EXISTS (
+                        SELECT 1 FROM jsonb_array_elements_text(coalesce(c.metadata->'tags', '[]'::jsonb)) AS t
+                        WHERE t = ANY(%s)
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM jsonb_array_elements_text(coalesce(r.frontmatter->'tags', '[]'::jsonb)) AS t
+                        WHERE t = ANY(%s)
+                    )
+                )"""
+            )
+            parameters.extend([tags, tags])
         parameters = [query, query, query, *parameters, limit]
         sql = f"""
             WITH search_queries AS (
@@ -1576,21 +1723,36 @@ class PostgresStore:
                 (mtime_ns, file_size, memory_id),
             )
 
-    async def clean_orphaned_staged_revisions(self, older_than_seconds: int = 3600) -> int:
-        """Prune revisions that were staged but never activated and have exceeded their timeout window."""
-        async with self.pool.connection() as connection:
-            async with connection.transaction():
-                result = await connection.execute(
-                    """
-                    DELETE FROM document_revisions
-                    WHERE state = 'staged'
-                      AND created_at < now() - (%s * interval '1 second')
-                    RETURNING revision_id
-                    """,
-                    (older_than_seconds,),
-                )
-                rows = await result.fetchall()
-                return len(rows)
+    async def clean_orphaned_staged_revisions(
+        self,
+        older_than_seconds: int = 3600,
+        batch_size: int = 50,
+    ) -> int:
+        """Prune revisions that were staged but never activated and have exceeded their timeout window, deleting in safe batches."""
+        total_pruned = 0
+        while True:
+            async with self.pool.connection() as connection:
+                async with connection.transaction():
+                    result = await connection.execute(
+                        """
+                        DELETE FROM document_revisions
+                        WHERE revision_id IN (
+                            SELECT revision_id FROM document_revisions
+                            WHERE state = 'staged'
+                              AND created_at < now() - (%s * interval '1 second')
+                            LIMIT %s
+                        )
+                        RETURNING revision_id
+                        """,
+                        (older_than_seconds, batch_size),
+                    )
+                    rows = await result.fetchall()
+                    if not rows:
+                        break
+                    total_pruned += len(rows)
+                    if len(rows) < batch_size:
+                        break
+        return total_pruned
 
     async def auto_reclaim_failed_outbox(
         self,
@@ -1633,13 +1795,13 @@ class PostgresStore:
         max_age_days: int = 30,
         outbox_retention_days: int = 7,
     ) -> dict[str, int]:
-        """Prune completed outbox records, finished jobs, and aged audit events."""
+        """Prune completed outbox records, finished jobs, aged audit events, and old superseded revisions."""
         async with self.pool.connection() as connection:
             async with connection.transaction():
                 res_outbox = await connection.execute(
                     """
                     DELETE FROM vector_outbox
-                    WHERE status IN ('completed', 'abandoned')
+                    WHERE status = 'succeeded'
                       AND (completed_at < now() - (%s * interval '1 day')
                            OR (completed_at IS NULL AND created_at < now() - (%s * interval '1 day')))
                     """,
@@ -1658,6 +1820,19 @@ class PostgresStore:
                 )
                 pruned_jobs = res_jobs.rowcount if hasattr(res_jobs, "rowcount") and res_jobs.rowcount is not None else 0
 
+                res_revisions = await connection.execute(
+                    """
+                    DELETE FROM document_revisions
+                    WHERE state = 'superseded'
+                      AND superseded_at < now() - (%s * interval '1 day')
+                      AND revision_id NOT IN (
+                          SELECT current_revision_id FROM documents WHERE current_revision_id IS NOT NULL
+                      )
+                    """,
+                    (max_age_days,),
+                )
+                pruned_revisions = res_revisions.rowcount if hasattr(res_revisions, "rowcount") and res_revisions.rowcount is not None else 0
+
                 res_audit = await connection.execute(
                     """
                     DELETE FROM memory_audit_events
@@ -1670,6 +1845,7 @@ class PostgresStore:
                 return {
                     "pruned_outbox": pruned_outbox,
                     "pruned_jobs": pruned_jobs,
+                    "pruned_revisions": pruned_revisions,
                     "pruned_audit_events": pruned_audit,
                 }
 

@@ -100,13 +100,23 @@ class VectorWorker:
             self.worker_id,
             self.batch_size,
         )
+        succeeded = 0
+        failed = 0
         for command in commands:
             try:
                 await self._process(command)
+                succeeded += 1
             except Exception as error:
-                logger.error("Vector command %s failed: %s", command.outbox_id, error)
+                failed += 1
+                err_msg = str(error) or repr(error)
+                logger.error(
+                    "Vector command %s failed (%s): %s",
+                    command.outbox_id,
+                    type(error).__name__,
+                    err_msg,
+                )
                 await self.control_store.fail_vector_command(command, error)
-            await asyncio.sleep(0)
+            await asyncio.sleep(0.01)
         return len(commands)
 
     async def run_forever(self, *, auto_reclaim_interval: float = 300.0) -> None:
@@ -129,7 +139,7 @@ class VectorWorker:
                 if not processed:
                     await asyncio.sleep(self.poll_interval)
                 else:
-                    await asyncio.sleep(0)
+                    await asyncio.sleep(0.05)
             except asyncio.CancelledError:
                 raise
             except Exception as error:

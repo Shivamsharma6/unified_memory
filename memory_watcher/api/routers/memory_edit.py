@@ -96,9 +96,68 @@ timestamps:
 
 def _safe_request_path(requested: str) -> Path:
     try:
-        return resolve_vault_path(_vault_root(), requested)
+        path = resolve_vault_path(_vault_root(), requested)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+    if path.suffix != ".md":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only markdown (.md) files can be edited or deleted: {requested}",
+        )
+
+    root = _vault_root().resolve()
+    rel = path.relative_to(root)
+
+    blocked_filenames = {
+        ".env",
+        ".env.example",
+        "docker-compose.yml",
+        "uams",
+        "uams.bat",
+        "Makefile",
+        "start_uams.sh",
+        "install.sh",
+        "install.bat",
+        "requirements.txt",
+        "pytest.ini",
+        "knowledge_graph.json",
+    }
+    if rel.name in blocked_filenames or any(p.startswith(".") for p in rel.parts):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Access denied: system and configuration files cannot be modified via memory API: {requested}",
+        )
+
+    allowed_folders = {
+        "Concepts",
+        "Daily",
+        "Tasks",
+        "Projects",
+        "People",
+        "Procedures",
+        "Research",
+        "Archive",
+        "Conversations",
+        "AI",
+        "Identity",
+        "Logs",
+    }
+    if len(rel.parts) == 1:
+        if not re.match(r"^\d{4}-\d{2}-\d{2}\.md$", rel.name):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Files in vault root cannot be modified unless they are daily notes (YYYY-MM-DD.md): {requested}",
+            )
+    else:
+        top_dir = rel.parts[0]
+        if top_dir not in allowed_folders:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Target path '{top_dir}' is not an approved memory folder: {requested}",
+            )
+
+    return path
 
 
 def _backup(file_path: Path) -> Path:

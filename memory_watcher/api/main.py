@@ -23,7 +23,7 @@ from identity.store import IdentityStore
 from api.readiness import assess_readiness, assess_lightweight_readiness, assess_deep_projection_drift
 from api.security import verify_agent_auth
 
-from models.memory_record import get_vault_root
+from models.memory_record import get_vault_root, parse_memory
 
 app = FastAPI(
     title="Unified Agent Memory API",
@@ -168,8 +168,15 @@ async def remember(request: RememberRequest):
                             and pipeline.vector_store is not None
                             and pipeline.control_store is not None
                         ):
-                            doc = parse_memory(path)
+                            raw_markdown = Path(path).read_text(encoding="utf-8")
+                            doc = parse_memory(path, raw_markdown)
                             chunks = pipeline.reconciler.chunker.chunk_document(doc)
+                            for chunk in chunks:
+                                if chunk.metadata:
+                                    chunk.metadata.memory_id = str(reconcile_result.memory_id)
+                                    chunk.metadata.revision_id = str(reconcile_result.revision_id)
+                                    if not getattr(chunk.metadata, "semantic_category", None):
+                                        chunk.metadata.semantic_category = doc.type
                             doc.chunks = chunks
                             embedded_doc = await pipeline.embedder.embed(doc)
                             await pipeline.vector_store.upsert_v2(embedded_doc.chunks)
@@ -193,9 +200,13 @@ async def remember(request: RememberRequest):
                         index_status = "active"
                         indexed = True
                     else:
-                        doc = parse_memory(path)
+                        raw_markdown = Path(path).read_text(encoding="utf-8")
+                        doc = parse_memory(path, raw_markdown)
                         if pipeline.embedder is not None and pipeline.vector_store is not None:
                             chunks = reconciler.chunker.chunk_document(doc)
+                            for chunk in chunks:
+                                if chunk.metadata and not getattr(chunk.metadata, "semantic_category", None):
+                                    chunk.metadata.semantic_category = doc.type
                             doc.chunks = chunks
                             embedded_doc = await pipeline.embedder.embed(doc)
                             await pipeline.vector_store.upsert_v2(embedded_doc.chunks)
@@ -250,7 +261,7 @@ async def summarize(request: SummarizeRequest):
         raise HTTPException(status_code=500, detail="Internal server error summarizing topic")
 
 
-@app.post("/entities", tags=["Graph"])
+@app.post("/entities", dependencies=[Depends(verify_agent_auth)], tags=["Graph"])
 async def get_entities():
     """Retrieve entities evidenced by current active memories."""
     store = getattr(app.state, "control_store", None)
@@ -258,7 +269,7 @@ async def get_entities():
         raise HTTPException(status_code=503, detail="PostgreSQL control plane is unavailable")
     return {"entities": await store.list_entities()}
 
-@app.post("/relations", tags=["Graph"])
+@app.post("/relations", dependencies=[Depends(verify_agent_auth)], tags=["Graph"])
 async def get_relations(entity: str):
     """Fetch current, evidenced one-hop relations for an entity."""
     store = getattr(app.state, "control_store", None)
@@ -282,7 +293,7 @@ async def get_relations(entity: str):
         relations.append(relation)
     return {"entity": entity, "relations": relations}
 
-@app.post("/context", tags=["Orchestration"])
+@app.post("/context", dependencies=[Depends(verify_agent_auth)], tags=["Orchestration"])
 async def get_context(request: ContextRequest):
     """Assemble a multi-document RAG context block optimized for LLM token limits."""
     search_req = SearchRequest(query=request.task, limit=10, compress=True, max_tokens=request.max_tokens)
@@ -290,7 +301,7 @@ async def get_context(request: ContextRequest):
     context_str = "\n\n".join([f"Source: {r.source_file}\n{r.text}" for r in res.results])
     return {"task": request.task, "context": context_str, "tokens": res.context_tokens_used}
 
-@app.post("/procedures", tags=["Retrieval"])
+@app.post("/procedures", dependencies=[Depends(verify_agent_auth)], tags=["Retrieval"])
 async def get_procedures(request: ProcedureRequest):
     """Specialized endpoint for retrieving operational rules (AGENTS.md)."""
     return {"task": request.task, "procedures": get_relevant_procedures(request.task)}
@@ -386,7 +397,7 @@ async def llm_status():
         "shutdown_in": round(max(0, provider.config.idle_timeout - idle_since), 1) if idle_since else None,
     }
 
-@app.post("/reflect", tags=["Intelligence"])
+@app.post("/reflect", dependencies=[Depends(verify_agent_auth)], tags=["Intelligence"])
 async def reflect():
     """Reflect on recent memories — quality assessment, gaps, suggestions."""
     from intelligence.reflection import MemoryReflector
@@ -416,7 +427,7 @@ async def reflect():
 
 
 
-@app.post("/consolidate", tags=["Intelligence"])
+@app.post("/consolidate", dependencies=[Depends(verify_agent_auth)], tags=["Intelligence"])
 async def consolidate_memories():
     """Consolidate episodic experiences into abstract concepts and reduce redundancy."""
     from memory_types.consolidation import MemoryConsolidator
@@ -441,7 +452,7 @@ async def consolidate_memories():
     }
 
 
-@app.post("/admin/maintenance/prune", tags=["Maintenance"])
+@app.post("/admin/maintenance/prune", dependencies=[Depends(verify_agent_auth)], tags=["Maintenance"])
 async def prune_maintenance(max_age_days: int = 30, outbox_retention_days: int = 7):
     """Prune completed outbox records, finished jobs, and aged audit events."""
     if pipeline.control_store is None:
@@ -456,7 +467,7 @@ async def prune_maintenance(max_age_days: int = 30, outbox_retention_days: int =
     }
 
 
-@app.post("/admin/repair/orphans", tags=["Maintenance"])
+@app.post("/admin/repair/orphans", dependencies=[Depends(verify_agent_auth)], tags=["Maintenance"])
 async def repair_orphans():
     """Clean orphaned staged revisions and deleted vector points."""
     results = {}
@@ -477,7 +488,7 @@ async def repair_orphans():
     }
 
 
-@app.post("/admin/repair/reindex", tags=["Maintenance"])
+@app.post("/admin/repair/reindex", dependencies=[Depends(verify_agent_auth)], tags=["Maintenance"])
 async def repair_reindex(force: bool = False):
     """Trigger complete or forced vault reconciliation scan."""
     if pipeline.reconciler is None:

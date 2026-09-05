@@ -174,3 +174,22 @@ class SemanticChunker:
         
         doc.chunks = chunks
         return doc
+
+    def chunk_document(self, doc_or_record) -> List[Chunk]:
+        """Chunk a Document, MemoryRecord, or raw text and return list of Chunk objects."""
+        if isinstance(doc_or_record, Document):
+            return self.chunk(doc_or_record).chunks
+
+        if hasattr(doc_or_record, "raw_markdown") and doc_or_record.raw_markdown:
+            raw = doc_or_record.raw_markdown
+        elif hasattr(doc_or_record, "path") and Path(doc_or_record.path).is_file():
+            raw = Path(doc_or_record.path).read_text(encoding="utf-8")
+        elif hasattr(doc_or_record, "body"):
+            raw = doc_or_record.body
+        else:
+            raw = str(doc_or_record)
+
+        path_str = str(getattr(doc_or_record, "vault_path", getattr(doc_or_record, "path", "")))
+        doc = Document(path=path_str, raw_content=raw)
+        return self.chunk(doc).chunks
+

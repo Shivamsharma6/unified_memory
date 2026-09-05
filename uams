@@ -311,7 +311,7 @@ case "${1:-}" in
   index)
     require_venv
     start_infra
-    (cd "$WATCHER_DIR" && "$VENV_DIR/bin/python" scripts/reindex_vault.py)
+    (cd "$WATCHER_DIR" && "$VENV_DIR/bin/python" scripts/reindex.py)
     ;;
   logs)
     tail -n 80 "$WATCHER_DIR/api.log" "$WATCHER_DIR/watcher.log" 2>/dev/null || true

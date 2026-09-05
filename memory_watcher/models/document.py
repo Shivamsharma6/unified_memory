@@ -10,6 +10,10 @@ class ChunkMetadata(BaseModel):
     timestamps: Dict[str, Any] = Field(default_factory=dict)
     backlinks: List[str] = Field(default_factory=list)
     semantic_category: Optional[str] = None
+    memory_id: Optional[str] = None
+    revision_id: Optional[str] = None
+    project: Optional[str] = None
+    source_agent: Optional[str] = None
 
 class Chunk(BaseModel):
     content: str

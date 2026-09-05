@@ -1,6 +1,6 @@
 import os
 from datetime import date
-from typing import Any
+from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
 
@@ -20,8 +20,15 @@ mcp = FastMCP(
 )
 
 
+_shared_client: Optional[UAMSClient] = None
+
+
 def _client() -> UAMSClient:
-    return UAMSClient(base_url=os.getenv("UAMS_API_URL", DEFAULT_BASE_URL))
+    global _shared_client
+    base_url = os.getenv("UAMS_API_URL", DEFAULT_BASE_URL)
+    if _shared_client is None or _shared_client.base_url != base_url.rstrip("/"):
+        _shared_client = UAMSClient(base_url=base_url)
+    return _shared_client
 
 
 @mcp.resource("uams://memory-policy")

@@ -39,6 +39,9 @@ class RetrievalPipeline:
         except Exception as e:
             logger.warning("Vector store unavailable during startup: %s", e)
 
+        from models.memory_record import get_vault_root
+        vault_root = get_vault_root()
+
         try:
             await self.control_store.open()
             self._control_open = True
@@ -52,8 +55,6 @@ class RetrievalPipeline:
                 reranker=self.reranker,
                 compressor=self.compressor,
             )
-            from models.memory_record import get_vault_root
-            vault_root = get_vault_root()
             self.reconciler = Reconciler(vault_root, self.control_store)
         except Exception as error:
             logger.warning("PostgreSQL control plane unavailable; using legacy retrieval: %s", error)
@@ -62,11 +63,24 @@ class RetrievalPipeline:
         
         # Load the graph database / local JSON
         try:
-            with open("knowledge_graph.json", "r") as f:
-                self.kg_store.G = nx.node_link_graph(json.load(f))
-                logger.info("Loaded Knowledge Graph for Graph-Aware Retrieval.")
+            candidates = [
+                Path("knowledge_graph.json"),
+                vault_root / "knowledge_graph.json",
+                vault_root / "memory_watcher" / "knowledge_graph.json",
+                Path(__file__).resolve().parents[2] / "knowledge_graph.json",
+            ]
+            loaded = False
+            for kg_path in candidates:
+                if kg_path.exists():
+                    with open(kg_path, "r", encoding="utf-8") as f:
+                        self.kg_store.G = nx.node_link_graph(json.load(f))
+                        logger.info("Loaded Knowledge Graph from %s for Graph-Aware Retrieval.", kg_path)
+                        loaded = True
+                        break
+            if not loaded:
+                logger.warning("Starting with empty Knowledge Graph.")
         except Exception as e:
-            logger.warning("Starting with empty Knowledge Graph.")
+            logger.warning("Starting with empty Knowledge Graph: %s", e)
         
         try:
             from identity.store import IdentityStore

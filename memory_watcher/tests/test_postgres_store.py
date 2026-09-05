@@ -24,6 +24,7 @@ def test_migrations_are_ordered():
         "004_incremental_and_invariants.sql",
         "005_bitemporal_claims.sql",
         "006_performance_and_storage_indexes.sql",
+        "007_mentions_chunk_id.sql",
     ]
 
 

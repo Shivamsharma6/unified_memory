@@ -139,19 +139,42 @@ class HybridRetrieval:
         profile_task = asyncio.create_task(
             self.control_store.profile_memory_boosts(request.query, entity_keys)
         )
-        try:
-            query_vector = await self._query_vector(request.query)
-            semantic = await self.vector_store.search_v2(
-                query_vector,
-                limit=candidate_limit,
-                memory_types=filter_values["memory_types"],
-                tags=request.tags,
-                projects=request.projects,
-                source_agents=request.source_agents,
-            )
-        except Exception as e:
-            logger.warning(f"Vector search failed: {e}")
-            semantic = []
+        semantic = []
+        for attempt in range(1, 4):
+            try:
+                query_vector = await self._query_vector(request.query)
+                semantic = await self.vector_store.search_v2(
+                    query_vector,
+                    limit=candidate_limit,
+                    memory_types=filter_values["memory_types"],
+                    tags=request.tags,
+                    projects=request.projects,
+                    source_agents=request.source_agents,
+                )
+                break
+            except Exception as e:
+                err_str = str(e).casefold()
+                is_transient = (
+                    "connect" in err_str
+                    or "connection" in err_str
+                    or "timeout" in err_str
+                    or "retryerror" in type(e).__name__.casefold()
+                    or "responsehandlingexception" in type(e).__name__.casefold()
+                    or isinstance(e, (ConnectionError, OSError))
+                )
+                if is_transient and attempt < 3:
+                    backoff = 0.2 * (2 ** (attempt - 1))
+                    logger.info(
+                        "Transient vector search failure on attempt %d (%s); retrying in %.2fs...",
+                        attempt,
+                        e,
+                        backoff,
+                    )
+                    await asyncio.sleep(backoff)
+                else:
+                    logger.warning(f"Vector search failed: {e}")
+                    semantic = []
+                    break
 
         lexical, expansion, profile_boosts = await asyncio.gather(
             lexical_task,

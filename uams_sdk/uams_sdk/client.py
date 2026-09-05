@@ -20,8 +20,9 @@ class UAMSClient:
         cache_ttl: int = 300,
         source_agent: Optional[str] = None,
         project: Optional[str] = None,
+        api_key: Optional[str] = None,
     ):
-        self.base_url = base_url
+        self.base_url = base_url.rstrip("/")
         self.source_agent = (
             source_agent
             or os.getenv("UAMS_AGENT_NAME")
@@ -29,8 +30,37 @@ class UAMSClient:
             or "unknown"
         )
         self.project = project or os.getenv("UAMS_PROJECT")
+        self.api_key = api_key or os.getenv("UAMS_API_KEY")
         self.timeout = httpx.Timeout(15.0, connect=5.0)
         self.cache = SDKCache(ttl=cache_ttl)
+        self._client: Optional[httpx.AsyncClient] = None
+
+    def _headers(self) -> Dict[str, str]:
+        headers = {"X-Agent-Name": self.source_agent}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                base_url=self.base_url,
+                timeout=self.timeout,
+                headers=self._headers(),
+            )
+        return self._client
+
+    async def close(self) -> None:
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
+
+    async def __aenter__(self) -> "UAMSClient":
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.close()
 
     async def _request(self, method: str, endpoint: str, json_data: Dict[str, Any] = None, use_cache: bool = False) -> Dict[str, Any]:
         if use_cache and method == "POST":
@@ -39,27 +69,28 @@ class UAMSClient:
                 logger.debug(f"Cache hit for {endpoint}")
                 return cached
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            try:
-                if method == "POST":
-                    response = await client.post(f"{self.base_url}{endpoint}", json=json_data or {})
-                elif method == "GET":
-                    response = await client.get(f"{self.base_url}{endpoint}", params=json_data)
-                else:
-                    raise ValueError(f"Unsupported method: {method}")
-                    
-                response.raise_for_status()
-                data = response.json()
+        client = await self._get_client()
+        try:
+            headers = self._headers()
+            if method == "POST":
+                response = await client.post(endpoint, json=json_data or {}, headers=headers)
+            elif method == "GET":
+                response = await client.get(endpoint, params=json_data, headers=headers)
+            else:
+                raise ValueError(f"Unsupported method: {method}")
                 
-                if use_cache and method == "POST":
-                    self.cache.set(endpoint, json_data or {}, data)
-                    
-                return data
+            response.raise_for_status()
+            data = response.json()
+            
+            if use_cache and method == "POST":
+                self.cache.set(endpoint, json_data or {}, data)
                 
-            except httpx.HTTPStatusError as e:
-                raise UAMSAPIError(f"API Error: {e.response.status_code}", status_code=e.response.status_code, details=e.response.text)
-            except httpx.RequestError as e:
-                raise UAMSConnectionError(f"Connection error to UAMS {endpoint}: {str(e)}")
+            return data
+            
+        except httpx.HTTPStatusError as e:
+            raise UAMSAPIError(f"API Error: {e.response.status_code}", status_code=e.response.status_code, details=e.response.text)
+        except httpx.RequestError as e:
+            raise UAMSConnectionError(f"Connection error to UAMS {endpoint}: {str(e)}")
 
     async def search(
         self,

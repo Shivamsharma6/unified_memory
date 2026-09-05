@@ -72,6 +72,12 @@ class MemoryRecord(BaseModel):
     relationships: list[MemoryRelationship] = Field(default_factory=list)
     frontmatter: dict[str, Any] = Field(default_factory=dict)
     body: str
+    chunks: list[Any] = Field(default_factory=list)
+
+    @property
+    def type(self) -> str:
+        return self.memory_type
+
 
 
 def split_frontmatter(text: str) -> tuple[dict[str, Any], str]:
@@ -193,11 +199,14 @@ def _title(body: str, fallback: str) -> str:
 
 def parse_memory(
     path: Path,
-    text: str,
+    text: str | None = None,
     *,
     vault_root: Path | None = None,
 ) -> MemoryRecord:
     """Parse a Markdown note into a stable, validated managed record."""
+
+    if text is None:
+        text = Path(path).read_text(encoding="utf-8")
 
     metadata, body = split_frontmatter(text)
     raw_memory_id = metadata.get("memory_id")
