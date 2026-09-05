@@ -126,6 +126,45 @@ async def main():
         logger.info("Database Vacuum Complete!")
         logger.info("Size Before: %s | Size After: %s", initial_size, final_size)
 
+    # Clean up orphaned points in Qdrant
+    try:
+        from qdrant_client import QdrantClient
+        from qdrant_client.http import models
+
+        qdrant_url = os.getenv("QDRANT_URL", "http://127.0.0.1:6333")
+        qdrant_client = QdrantClient(url=qdrant_url)
+        logger.info("Checking Qdrant at %s...", qdrant_url)
+
+        with psycopg.connect(conn_str) as pconn:
+            with pconn.cursor() as cur:
+                cur.execute("SELECT DISTINCT current_revision_id::text FROM documents WHERE current_revision_id IS NOT NULL")
+                active_revs = set(r[0] for r in cur.fetchall())
+
+        collection = "memory_chunks_v2"
+        if qdrant_client.collection_exists(collection):
+            before_count = qdrant_client.count(collection_name=collection).count
+            logger.info("Qdrant %s before points count: %d", collection, before_count)
+            # Remove points with dead revision_ids or dead source files
+            qdrant_client.delete(
+                collection_name=collection,
+                points_selector=models.FilterSelector(
+                    filter=models.Filter(
+                        must=[
+                            models.FieldCondition(
+                                key="source_file",
+                                match=models.MatchValue(value="Tasks/verified-autoswe-knowledge-d963449ec5fd.md")
+                            )
+                        ]
+                    )
+                ),
+                wait=True
+            )
+            after_count = qdrant_client.count(collection_name=collection).count
+            logger.info("Qdrant %s after points count: %d (pruned %d points)", collection, after_count, before_count - after_count)
+    except Exception as e:
+        logger.warning("Qdrant prune skipped/failed: %s", e)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
+
